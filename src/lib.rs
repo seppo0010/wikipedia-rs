@@ -155,6 +155,37 @@ impl Wikipedia {
                 ].into_iter());
         Ok(url)
     }
+
+    pub fn geosearch(&self, latitude: f64, longitude: f64, radius: u16) -> Result<Vec<String>> {
+        let url = try!(self.geosearch_url(latitude, longitude, radius));
+        let client = Client::new();
+        let mut response = try!(client.get(url)
+            .header(UserAgent(self.user_agent.clone()))
+            .send());
+
+        if !response.status.is_success() {
+            return Err(Error::HTTPError(response));
+        }
+
+        let mut response_str = String::new();
+        try!(response.read_to_string(&mut response_str));
+
+        let data:serde_json::Value = try!(serde_json::from_str(&*response_str));
+
+        // There has to be a better way to write the following code
+        Ok(try!(
+            data.as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("geosearch"))
+            .and_then(|x| x.as_array())
+            .ok_or(Error::JSONPathError)
+            ).into_iter().filter_map(|i|
+                i.as_object()
+                .and_then(|i| i.get("title"))
+                .and_then(|s| s.as_string().map(|s| s.to_owned()))
+                ).collect())
+    }
 }
 
 #[test]
@@ -191,4 +222,12 @@ fn geosearch_url() {
     let wikipedia = Wikipedia::default();
     assert_eq!(&*format!("{}", wikipedia.geosearch_url(-34.603333, -58.381667, 10).unwrap()),
             "https://en.wikipedia.org/w/api.php?list=geosearch&gsradius=10&gscoord=-34.603333%7C-58.381667&gslimit=10&format=json&action=query");
+}
+
+#[test]
+fn geosearch() {
+    let wikipedia = Wikipedia::default();
+    let results = wikipedia.geosearch(-34.603333, -58.381667, 10).unwrap();
+    assert!(results.len() > 0);
+    assert!(results.contains(&"Buenos Aires".to_owned()));
 }
