@@ -6,3 +6,4 @@ authors = ["Sebastian Waisbrot <seppo0010@gmail.com>"]
 [dependencies]
 hyper = "0.6.13"
 url = "0.2.37"
+serde_json = "0.6.0"
