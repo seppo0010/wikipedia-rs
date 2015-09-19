@@ -19,6 +19,7 @@ pub enum Error {
     IOError(io::Error),
     JSONError(serde_json::error::Error),
     JSONPathError,
+    InvalidParameter(String),
 }
 
 impl std::convert::From<url::ParseError> for Error {
@@ -131,6 +132,29 @@ impl Wikipedia {
                 .and_then(|s| s.as_string().map(|s| s.to_owned()))
                 ).collect())
     }
+
+    fn geosearch_url(&self, latitude: f64, longitude: f64, radius: u16) -> Result<Url> {
+        if latitude < -90.0 || latitude > 90.0 {
+            return Err(Error::InvalidParameter("latitude".to_string()))
+        }
+        if longitude < -180.0 || longitude > 180.0 {
+            return Err(Error::InvalidParameter("longitude".to_string()))
+        }
+        if radius < 10 || radius > 10000 {
+            return Err(Error::InvalidParameter("radius".to_string()))
+        }
+        let mut url = try!(Url::parse(&*self.base_url()));
+        let results = &*format!("{}", self.search_results);
+        url.set_query_from_pairs(vec![
+                ("list", "geosearch"),
+                ("gsradius", &*format!("{}", radius)),
+                ("gscoord", &*format!("{}|{}", latitude, longitude)),
+                ("gslimit", results),
+                ("format", "json"),
+                ("action", "query"),
+                ].into_iter());
+        Ok(url)
+    }
 }
 
 #[test]
@@ -160,4 +184,11 @@ fn search() {
     let results = wikipedia.search("hello world").unwrap();
     assert!(results.len() > 0);
     assert!(results.contains(&"\"Hello, World!\" program".to_owned()));
+}
+
+#[test]
+fn geosearch_url() {
+    let wikipedia = Wikipedia::default();
+    assert_eq!(&*format!("{}", wikipedia.geosearch_url(-34.603333, -58.381667, 10).unwrap()),
+            "https://en.wikipedia.org/w/api.php?list=geosearch&gsradius=10&gscoord=-34.603333%7C-58.381667&gslimit=10&format=json&action=query");
 }
