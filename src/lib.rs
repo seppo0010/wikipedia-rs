@@ -87,6 +87,22 @@ impl Wikipedia {
         self.post_language_url = base_url[index+LANGUAGE_URL_MARKER.len()..].to_owned();
     }
 
+    fn query(&self, url: Url) -> Result<serde_json::Value> {
+        let client = Client::new();
+        let mut response = try!(client.get(url)
+            .header(UserAgent(self.user_agent.clone()))
+            .send());
+
+        if !response.status.is_success() {
+            return Err(Error::HTTPError(response));
+        }
+
+        let mut response_str = String::new();
+        try!(response.read_to_string(&mut response_str));
+
+        Ok(try!(serde_json::from_str(&*response_str)))
+    }
+
     fn search_url(&self, query: &str) -> Result<Url> {
         let mut url = try!(Url::parse(&*self.base_url()));
         let results = &*format!("{}", self.search_results);
@@ -104,19 +120,7 @@ impl Wikipedia {
 
     pub fn search(&self, query: &str) -> Result<Vec<String>> {
         let url = try!(self.search_url(query));
-        let client = Client::new();
-        let mut response = try!(client.get(url)
-            .header(UserAgent(self.user_agent.clone()))
-            .send());
-
-        if !response.status.is_success() {
-            return Err(Error::HTTPError(response));
-        }
-
-        let mut response_str = String::new();
-        try!(response.read_to_string(&mut response_str));
-
-        let data:serde_json::Value = try!(serde_json::from_str(&*response_str));
+        let data = try!(self.query(url));
 
         // There has to be a better way to write the following code
         Ok(try!(
@@ -158,19 +162,7 @@ impl Wikipedia {
 
     pub fn geosearch(&self, latitude: f64, longitude: f64, radius: u16) -> Result<Vec<String>> {
         let url = try!(self.geosearch_url(latitude, longitude, radius));
-        let client = Client::new();
-        let mut response = try!(client.get(url)
-            .header(UserAgent(self.user_agent.clone()))
-            .send());
-
-        if !response.status.is_success() {
-            return Err(Error::HTTPError(response));
-        }
-
-        let mut response_str = String::new();
-        try!(response.read_to_string(&mut response_str));
-
-        let data:serde_json::Value = try!(serde_json::from_str(&*response_str));
+        let data = try!(self.query(url));
 
         // There has to be a better way to write the following code
         Ok(try!(
