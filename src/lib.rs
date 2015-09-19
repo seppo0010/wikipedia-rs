@@ -14,7 +14,7 @@ const LANGUAGE_URL_MARKER:&'static str = "{language}";
 macro_rules! results {
     ($data: expr, $query_field: expr) => {
         // There has to be a better way to write the following code
-        Ok(try!(
+        try!(
             $data.as_object()
             .and_then(|x| x.get("query"))
             .and_then(|x| x.as_object())
@@ -25,7 +25,7 @@ macro_rules! results {
                 i.as_object()
                 .and_then(|i| i.get("title"))
                 .and_then(|s| s.as_string().map(|s| s.to_owned()))
-                ).collect())
+                ).collect()
     }
 }
 
@@ -141,7 +141,7 @@ impl Wikipedia {
         let url = try!(self.search_url(query));
         let data = try!(self.query(url));
 
-        results!(data, "search")
+        Ok(results!(data, "search"))
     }
 
     fn geosearch_url(&self, latitude: f64, longitude: f64, radius: u16) -> Result<Url> {
@@ -171,7 +171,33 @@ impl Wikipedia {
         let url = try!(self.geosearch_url(latitude, longitude, radius));
         let data = try!(self.query(url));
 
-        results!(data, "geosearch")
+        Ok(results!(data, "geosearch"))
+    }
+
+    fn random_url(&self, count: u8) -> Result<Url> {
+        let mut url = try!(Url::parse(&*self.base_url()));
+        url.set_query_from_pairs(vec![
+                ("list", "random"),
+                ("rnnamespace", "0"),
+                ("rnlimit", &*format!("{}", count)),
+                ("continue", ""),
+                ("format", "json"),
+                ("action", "query"),
+                ].into_iter());
+        Ok(url)
+    }
+
+    pub fn random(&self) -> Result<Option<String>> {
+        let url = try!(self.random_url(1));
+        let data = try!(self.query(url));
+        let r:Vec<String> = results!(data, "random");
+        Ok(r.into_iter().next())
+    }
+
+    pub fn random_count(&self, count: u8) -> Result<Vec<String>> {
+        let url = try!(self.random_url(count));
+        let data = try!(self.query(url));
+        Ok(results!(data, "random"))
     }
 }
 
@@ -217,4 +243,23 @@ fn geosearch() {
     let results = wikipedia.geosearch(-34.603333, -58.381667, 10).unwrap();
     assert!(results.len() > 0);
     assert!(results.contains(&"Buenos Aires".to_owned()));
+}
+
+#[test]
+fn random_url() {
+    let wikipedia = Wikipedia::default();
+    assert_eq!(&*format!("{}", wikipedia.random_url(10).unwrap()),
+            "https://en.wikipedia.org/w/api.php?list=random&rnnamespace=0&rnlimit=10&continue=&format=json&action=query");
+}
+
+#[test]
+fn random() {
+    let wikipedia = Wikipedia::default();
+    wikipedia.random().unwrap().unwrap();
+}
+
+#[test]
+fn random_count() {
+    let wikipedia = Wikipedia::default();
+    assert_eq!(wikipedia.random_count(3).unwrap().len(), 3);
 }
