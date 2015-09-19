@@ -11,6 +11,25 @@ use hyper::header::UserAgent;
 
 const LANGUAGE_URL_MARKER:&'static str = "{language}";
 
+macro_rules! results {
+    ($data: expr, $query_field: expr) => {
+        // There has to be a better way to write the following code
+        Ok(try!(
+            $data.as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get($query_field))
+            .and_then(|x| x.as_array())
+            .ok_or(Error::JSONPathError)
+            ).into_iter().filter_map(|i|
+                i.as_object()
+                .and_then(|i| i.get("title"))
+                .and_then(|s| s.as_string().map(|s| s.to_owned()))
+                ).collect())
+    }
+}
+
+
 #[derive(Debug)]
 pub enum Error {
     UrlError(url::ParseError),
@@ -122,19 +141,7 @@ impl Wikipedia {
         let url = try!(self.search_url(query));
         let data = try!(self.query(url));
 
-        // There has to be a better way to write the following code
-        Ok(try!(
-            data.as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("search"))
-            .and_then(|x| x.as_array())
-            .ok_or(Error::JSONPathError)
-            ).into_iter().filter_map(|i|
-                i.as_object()
-                .and_then(|i| i.get("title"))
-                .and_then(|s| s.as_string().map(|s| s.to_owned()))
-                ).collect())
+        results!(data, "search")
     }
 
     fn geosearch_url(&self, latitude: f64, longitude: f64, radius: u16) -> Result<Url> {
@@ -164,19 +171,7 @@ impl Wikipedia {
         let url = try!(self.geosearch_url(latitude, longitude, radius));
         let data = try!(self.query(url));
 
-        // There has to be a better way to write the following code
-        Ok(try!(
-            data.as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("geosearch"))
-            .and_then(|x| x.as_array())
-            .ok_or(Error::JSONPathError)
-            ).into_iter().filter_map(|i|
-                i.as_object()
-                .and_then(|i| i.get("title"))
-                .and_then(|s| s.as_string().map(|s| s.to_owned()))
-                ).collect())
+        results!(data, "geosearch")
     }
 }
 
