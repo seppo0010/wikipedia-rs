@@ -5,6 +5,7 @@ extern crate serde_json;
 use std::result;
 use std::io;
 use std::io::Read;
+use std::cmp::PartialEq;
 
 use hyper::{Client, Url};
 use hyper::header::UserAgent;
@@ -198,6 +199,34 @@ impl Wikipedia {
         let url = try!(self.random_url(count));
         let data = try!(self.query(url));
         Ok(results!(data, "random"))
+    }
+}
+
+#[derive(Debug)]
+pub struct Page {
+    title: Option<String>,
+    pageid: Option<String>,
+}
+
+impl Page {
+    pub fn from_title(title: String) -> Page {
+        Page { title: Some(title), pageid: None, }
+    }
+
+    pub fn from_pageid(pageid: String) -> Page {
+        Page { title: None, pageid: Some(pageid), }
+    }
+}
+
+impl PartialEq<Page> for Page {
+    fn eq(&self, other: &Page) -> bool {
+        if self.title.is_some() && other.title.is_some() {
+            return self.title == other.title;
+        }
+        if self.pageid.is_some() && other.pageid.is_some() {
+            return self.title == other.title;
+        }
+        return false;
     }
 }
 
