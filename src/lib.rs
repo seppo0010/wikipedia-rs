@@ -215,14 +215,12 @@ impl Wikipedia {
 enum TitlePageId {
     Title(String),
     PageId(String),
-    TitleAndPageId(String, String),
 }
 
 impl TitlePageId {
     fn query_param(&self) -> (String, String) {
         match *self {
             TitlePageId::Title(ref s) => ("titles".to_owned(), s.clone()),
-            TitlePageId::TitleAndPageId(ref s, _) => ("titles".to_owned(), s.clone()),
             TitlePageId::PageId(ref s) => ("pageids".to_owned(), s.clone()),
         }
     }
@@ -353,17 +351,10 @@ impl<'a> PartialEq<Page<'a>> for Page<'a> {
         match self.identifier {
             TitlePageId::Title(ref t1) => match other.identifier {
                 TitlePageId::Title(ref t2) => t1 == t2,
-                TitlePageId::TitleAndPageId(ref t2, _) => t1 == t2,
                 TitlePageId::PageId(_) => false,
-            },
-            TitlePageId::TitleAndPageId(ref t1, ref p1) => match other.identifier {
-                TitlePageId::Title(ref t2) => t1 == t2,
-                TitlePageId::TitleAndPageId(ref t2, _) => t1 == t2,
-                TitlePageId::PageId(ref p2) => p1 == p2,
             },
             TitlePageId::PageId(ref p1) => match other.identifier {
                 TitlePageId::Title(_) => false,
-                TitlePageId::TitleAndPageId(_, ref p2) => p1 == p2,
                 TitlePageId::PageId(ref p2) => p1 == p2,
             },
         }
