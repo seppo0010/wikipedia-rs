@@ -313,6 +313,39 @@ impl<'a> Page<'a> {
             .ok_or(Error::JSONPathError))
             .to_owned())
     }
+
+    pub fn get_summary(&self) -> Result<String> {
+        let mut url = try!(Url::parse(&*self.wikipedia.base_url()));
+        let qp = self.identifier.query_param();
+        let params = vec![
+            ("prop", "extracts"),
+            ("explaintext", ""),
+            ("exintro", ""),
+            ("format", "json"),
+            ("action", "query"),
+            (&*qp.0, &*qp.1),
+        ];
+        url.set_query_from_pairs(params.into_iter());
+
+        let q = try!(self.wikipedia.query(url));
+        let pages = try!(q
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("pages"))
+            .and_then(|x| x.as_object())
+            .ok_or(Error::JSONPathError));
+        let pageid = match pages.keys().next() {
+            Some(p) => p,
+            None => return Err(Error::JSONPathError),
+        };
+        Ok(try!(pages.get(pageid)
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("extract"))
+            .and_then(|x| x.as_string())
+            .ok_or(Error::JSONPathError))
+            .to_owned())
+    }
 }
 
 impl<'a> PartialEq<Page<'a>> for Page<'a> {
@@ -414,4 +447,14 @@ fn page_html_content() {
     let html = page.get_html_content().unwrap();
     assert!(html.contains("bikeshedding"));
     assert!(html.contains("</div>")); // it would not be html otherwise
+}
+
+#[test]
+fn page_summary() {
+    let wikipedia = Wikipedia::default();
+    let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
+    let summary = page.get_summary().unwrap();
+    let content = page.get_content().unwrap();
+    assert!(summary.contains("bikeshedding"));
+    assert!(summary.len() < content.len());
 }
