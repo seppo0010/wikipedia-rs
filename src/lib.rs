@@ -68,6 +68,7 @@ impl std::convert::From<serde_json::error::Error> for Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
+#[derive(Debug)]
 pub struct Wikipedia {
     pub pre_language_url:String,
     pub post_language_url:String,
@@ -200,33 +201,99 @@ impl Wikipedia {
         let data = try!(self.query(url));
         Ok(results!(data, "random"))
     }
+
+    pub fn page_from_title<'a>(&'a self, title: String) -> Page<'a> {
+        Page::from_title(self, title)
+    }
 }
 
 #[derive(Debug)]
-pub struct Page {
-    title: Option<String>,
-    pageid: Option<String>,
+enum TitlePageId {
+    Title(String),
+    PageId(String),
+    TitleAndPageId(String, String),
 }
 
-impl Page {
-    pub fn from_title(title: String) -> Page {
-        Page { title: Some(title), pageid: None, }
-    }
-
-    pub fn from_pageid(pageid: String) -> Page {
-        Page { title: None, pageid: Some(pageid), }
+impl TitlePageId {
+    fn query_param(&self) -> (String, String) {
+        match *self {
+            TitlePageId::Title(ref s) => ("titles".to_owned(), s.clone()),
+            TitlePageId::TitleAndPageId(ref s, _) => ("titles".to_owned(), s.clone()),
+            TitlePageId::PageId(ref s) => ("pageids".to_owned(), s.clone()),
+        }
     }
 }
 
-impl PartialEq<Page> for Page {
+#[derive(Debug)]
+pub struct Page<'a> {
+    wikipedia: &'a Wikipedia,
+    identifier: TitlePageId,
+}
+
+impl<'a> Page<'a> {
+    pub fn from_title(wikipedia: &'a Wikipedia, title: String) -> Page {
+        Page { wikipedia: wikipedia, identifier: TitlePageId::Title(title) }
+    }
+
+    pub fn from_pageid(wikipedia: &'a Wikipedia, pageid: String) -> Page {
+        Page { wikipedia: wikipedia, identifier: TitlePageId::PageId(pageid) }
+    }
+
+    pub fn get_content(&self) -> Result<String> {
+        let mut url = try!(Url::parse(&*self.wikipedia.base_url()));
+        let qp = self.identifier.query_param();
+        let params = vec![
+            ("prop", "extracts|revisions"),
+            ("explaintext", ""),
+            ("rvprop", "ids"),
+            ("format", "json"),
+            ("action", "query"),
+            (&*qp.0, &*qp.1),
+        ];
+        url.set_query_from_pairs(params.into_iter());
+
+        let q = try!(self.wikipedia.query(url));
+        let pages = try!(q
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("pages"))
+            .and_then(|x| x.as_object())
+            .ok_or(Error::JSONPathError));
+        let pageid = match pages.keys().next() {
+            Some(p) => p,
+            None => return Err(Error::JSONPathError),
+        };
+        Ok(try!(try!(pages.get(pageid)
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("extract"))
+            .ok_or(Error::JSONPathError))
+            .as_string()
+            .ok_or(Error::JSONPathError))
+            .to_owned())
+
+    }
+}
+
+impl<'a> PartialEq<Page<'a>> for Page<'a> {
     fn eq(&self, other: &Page) -> bool {
-        if self.title.is_some() && other.title.is_some() {
-            return self.title == other.title;
+        match self.identifier {
+            TitlePageId::Title(ref t1) => match other.identifier {
+                TitlePageId::Title(ref t2) => t1 == t2,
+                TitlePageId::TitleAndPageId(ref t2, _) => t1 == t2,
+                TitlePageId::PageId(_) => false,
+            },
+            TitlePageId::TitleAndPageId(ref t1, ref p1) => match other.identifier {
+                TitlePageId::Title(ref t2) => t1 == t2,
+                TitlePageId::TitleAndPageId(ref t2, _) => t1 == t2,
+                TitlePageId::PageId(ref p2) => p1 == p2,
+            },
+            TitlePageId::PageId(ref p1) => match other.identifier {
+                TitlePageId::Title(_) => false,
+                TitlePageId::TitleAndPageId(_, ref p2) => p1 == p2,
+                TitlePageId::PageId(ref p2) => p1 == p2,
+            },
         }
-        if self.pageid.is_some() && other.pageid.is_some() {
-            return self.title == other.title;
-        }
-        return false;
     }
 }
 
@@ -291,4 +358,11 @@ fn random() {
 fn random_count() {
     let wikipedia = Wikipedia::default();
     assert_eq!(wikipedia.random_count(3).unwrap().len(), 3);
+}
+
+#[test]
+fn page_content() {
+    let wikipedia = Wikipedia::default();
+    let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
+    assert!(page.get_content().unwrap().contains("bikeshedding"));
 }
