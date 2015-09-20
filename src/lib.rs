@@ -205,6 +205,10 @@ impl Wikipedia {
     pub fn page_from_title<'a>(&'a self, title: String) -> Page<'a> {
         Page::from_title(self, title)
     }
+
+    pub fn page_from_pageid<'a>(&'a self, pageid: String) -> Page<'a> {
+        Page::from_pageid(self, pageid)
+    }
 }
 
 #[derive(Debug)]
@@ -264,14 +268,50 @@ impl<'a> Page<'a> {
             Some(p) => p,
             None => return Err(Error::JSONPathError),
         };
-        Ok(try!(try!(pages.get(pageid)
+        Ok(try!(pages.get(pageid)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
-            .ok_or(Error::JSONPathError))
-            .as_string()
+            .and_then(|x| x.as_string())
             .ok_or(Error::JSONPathError))
             .to_owned())
+    }
 
+    pub fn get_html_content(&self) -> Result<String> {
+        let mut url = try!(Url::parse(&*self.wikipedia.base_url()));
+        let qp = self.identifier.query_param();
+        let params = vec![
+            ("prop", "revisions"),
+            ("rvprop", "content"),
+            ("rvlimit", "1"),
+            ("rvparse", ""),
+            ("format", "json"),
+            ("action", "query"),
+            (&*qp.0, &*qp.1),
+        ];
+        url.set_query_from_pairs(params.into_iter());
+
+        let q = try!(self.wikipedia.query(url));
+        let pages = try!(q
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("pages"))
+            .and_then(|x| x.as_object())
+            .ok_or(Error::JSONPathError));
+        let pageid = match pages.keys().next() {
+            Some(p) => p,
+            None => return Err(Error::JSONPathError),
+        };
+        Ok(try!(pages.get(pageid)
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("revisions"))
+            .and_then(|x| x.as_array())
+            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("*"))
+            .and_then(|x| x.as_string())
+            .ok_or(Error::JSONPathError))
+            .to_owned())
     }
 }
 
@@ -365,4 +405,13 @@ fn page_content() {
     let wikipedia = Wikipedia::default();
     let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
     assert!(page.get_content().unwrap().contains("bikeshedding"));
+}
+
+#[test]
+fn page_html_content() {
+    let wikipedia = Wikipedia::default();
+    let page = wikipedia.page_from_pageid("4138548".to_owned());
+    let html = page.get_html_content().unwrap();
+    assert!(html.contains("bikeshedding"));
+    assert!(html.contains("</div>")); // it would not be html otherwise
 }
