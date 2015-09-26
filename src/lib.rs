@@ -2,13 +2,19 @@ extern crate hyper;
 extern crate url;
 extern crate serde_json;
 
-use std::result;
+use std::cmp::PartialEq;
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::HashSet;
 use std::io;
 use std::io::Read;
-use std::cmp::PartialEq;
+use std::result;
 
 use hyper::{Client, Url};
 use hyper::header::UserAgent;
+
+mod images;
+pub use images::Iter as ImagesIter;
 
 const LANGUAGE_URL_MARKER:&'static str = "{language}";
 
@@ -75,6 +81,7 @@ pub struct Wikipedia {
     pub user_agent:String,
     pub language:String,
     pub search_results:u32,
+    pub images_results:String,
 }
 
 impl Default for Wikipedia {
@@ -85,6 +92,7 @@ impl Default for Wikipedia {
             user_agent: "wikipedia (https://github.com/seppo0010/wikipedia-rs)".to_owned(),
             language: "en".to_owned(),
             search_results: 10,
+            images_results: "max".to_owned(),
         }
     }
 }
@@ -373,6 +381,58 @@ impl<'a> Page<'a> {
             .ok_or(Error::JSONPathError))
             .to_owned())
     }
+
+    fn parse_cont(&self, q: &serde_json::Value) -> Result<Option<Vec<(String, String)>>> {
+        let cont = match q
+            .as_object()
+            .and_then(|x| x.get("continue"))
+            .and_then(|x| x.as_object()) {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+        let mut cont_v = vec![];
+        for (k, v) in cont.into_iter() {
+            let value = try!(v.as_string().ok_or(Error::JSONPathError));
+            cont_v.push((k.clone(), value.to_owned()));
+        }
+        Ok(Some(cont_v))
+    }
+
+    fn request_images(&self, cont: &Option<Vec<(String, String)>>) ->
+            Result<(BTreeMap<String, serde_json::Value>, Option<Vec<(String, String)>>)> {
+        let mut url = try!(Url::parse(&*self.wikipedia.base_url()));
+        let qp = self.identifier.query_param();
+        let mut params = vec![
+            ("generator", "images"),
+            ("gimlimit", &*self.wikipedia.images_results),
+            ("prop", "imageinfo"),
+            ("iiprop", "url"),
+            ("format", "json"),
+            ("action", "query"),
+            (&*qp.0, &*qp.1),
+        ];
+        match *cont {
+            Some(ref v) => {
+                for x in v.iter() { params.push((&*x.0, &*x.1)); }
+            },
+            None => params.push(("continue", "")),
+        }
+        url.set_query_from_pairs(params.into_iter());
+
+        let q = try!(self.wikipedia.query(url));
+        let pages = try!(q
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("pages"))
+            .and_then(|x| x.as_object())
+            .ok_or(Error::JSONPathError));
+        Ok((pages.clone(), try!(self.parse_cont(&q))))
+    }
+
+    pub fn get_images(&self) -> Result<ImagesIter> {
+        ImagesIter::new(&self)
+    }
 }
 
 impl<'a> PartialEq<Page<'a>> for Page<'a> {
@@ -487,4 +547,25 @@ fn page_redirect_summary() {
     let content = page.get_content().unwrap();
     assert!(summary.contains("bikeshedding"));
     assert!(summary.len() < content.len());
+}
+
+#[test]
+fn page_images() {
+    let mut wikipedia = Wikipedia::default();
+    wikipedia.images_results = "5".to_owned();
+    let page = wikipedia.page_from_title("Argentina".to_owned());
+    let images = page.get_images().unwrap();
+    let mut c = 0;
+    let mut set = HashSet::new();
+    for i in images {
+        assert!(i.title.len() > 0);
+        assert!(i.url.len() > 0);
+        assert!(i.description_url.len() > 0);
+        c += 1;
+        set.insert(i.title);
+        if c == 11 {
+            break;
+        }
+    }
+    assert_eq!(set.len(), 11);
 }
