@@ -241,6 +241,20 @@ impl<'a> Page<'a> {
         Page { wikipedia: wikipedia, identifier: TitlePageId::PageId(pageid) }
     }
 
+    fn redirect(&self, q: &serde_json::Value) -> Option<String> {
+        println!("q {:?}", q);
+        q.as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("redirects"))
+            .and_then(|x| x.as_array())
+            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("to"))
+            .and_then(|x| x.as_string())
+            .map(|x| x.to_owned())
+    }
+
     pub fn get_content(&self) -> Result<String> {
         let mut url = try!(Url::parse(&*self.wikipedia.base_url()));
         let qp = self.identifier.query_param();
@@ -248,6 +262,7 @@ impl<'a> Page<'a> {
             ("prop", "extracts|revisions"),
             ("explaintext", ""),
             ("rvprop", "ids"),
+            ("redirects", ""),
             ("format", "json"),
             ("action", "query"),
             (&*qp.0, &*qp.1),
@@ -255,6 +270,10 @@ impl<'a> Page<'a> {
         url.set_query_from_pairs(params.into_iter());
 
         let q = try!(self.wikipedia.query(url));
+        match self.redirect(&q) {
+            Some(r) => return Page::from_title(&self.wikipedia, r).get_content(),
+            None => (),
+        }
         let pages = try!(q
             .as_object()
             .and_then(|x| x.get("query"))
@@ -282,6 +301,7 @@ impl<'a> Page<'a> {
             ("rvprop", "content"),
             ("rvlimit", "1"),
             ("rvparse", ""),
+            ("redirects", ""),
             ("format", "json"),
             ("action", "query"),
             (&*qp.0, &*qp.1),
@@ -289,6 +309,10 @@ impl<'a> Page<'a> {
         url.set_query_from_pairs(params.into_iter());
 
         let q = try!(self.wikipedia.query(url));
+        match self.redirect(&q) {
+            Some(r) => return Page::from_title(&self.wikipedia, r).get_html_content(),
+            None => (),
+        }
         let pages = try!(q
             .as_object()
             .and_then(|x| x.get("query"))
@@ -319,6 +343,7 @@ impl<'a> Page<'a> {
             ("prop", "extracts"),
             ("explaintext", ""),
             ("exintro", ""),
+            ("redirects", ""),
             ("format", "json"),
             ("action", "query"),
             (&*qp.0, &*qp.1),
@@ -326,6 +351,10 @@ impl<'a> Page<'a> {
         url.set_query_from_pairs(params.into_iter());
 
         let q = try!(self.wikipedia.query(url));
+        match self.redirect(&q) {
+            Some(r) => return Page::from_title(&self.wikipedia, r).get_summary(),
+            None => (),
+        }
         let pages = try!(q
             .as_object()
             .and_then(|x| x.get("query"))
@@ -444,6 +473,16 @@ fn page_html_content() {
 fn page_summary() {
     let wikipedia = Wikipedia::default();
     let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
+    let summary = page.get_summary().unwrap();
+    let content = page.get_content().unwrap();
+    assert!(summary.contains("bikeshedding"));
+    assert!(summary.len() < content.len());
+}
+
+#[test]
+fn page_redirect_summary() {
+    let wikipedia = Wikipedia::default();
+    let page = wikipedia.page_from_title("Bikeshedding".to_owned());
     let summary = page.get_summary().unwrap();
     let content = page.get_content().unwrap();
     assert!(summary.contains("bikeshedding"));
