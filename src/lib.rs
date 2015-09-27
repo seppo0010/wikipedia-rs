@@ -31,6 +31,34 @@ macro_rules! results {
     }
 }
 
+macro_rules! cont {
+    ($this: expr, $cont: expr, $($params: expr),*) => {{
+        let qp = $this.identifier.query_param();
+        let mut params = vec![
+            $($params),*,
+            ("format", "json"),
+            ("action", "query"),
+            (&*qp.0, &*qp.1),
+        ];
+        match *$cont {
+            Some(ref v) => {
+                for x in v.iter() { params.push((&*x.0, &*x.1)); }
+            },
+            None => params.push(("continue", "")),
+        }
+        let q = try!($this.wikipedia.query(params.into_iter()));
+
+        let pages = try!(q
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("pages"))
+            .and_then(|x| x.as_object())
+            .ok_or(Error::JSONPathError));
+        Ok((pages.clone(), try!($this.parse_cont(&q))))
+    }}
+}
+
 
 #[derive(Debug)]
 pub enum Error {
@@ -343,32 +371,12 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
 
     fn request_images(&self, cont: &Option<Vec<(String, String)>>) ->
             Result<(BTreeMap<String, serde_json::Value>, Option<Vec<(String, String)>>)> {
-        let qp = self.identifier.query_param();
-        let mut params = vec![
+        cont!(self, cont,
             ("generator", "images"),
             ("gimlimit", &*self.wikipedia.images_results),
             ("prop", "imageinfo"),
-            ("iiprop", "url"),
-            ("format", "json"),
-            ("action", "query"),
-            (&*qp.0, &*qp.1),
-        ];
-        match *cont {
-            Some(ref v) => {
-                for x in v.iter() { params.push((&*x.0, &*x.1)); }
-            },
-            None => params.push(("continue", "")),
-        }
-        let q = try!(self.wikipedia.query(params.into_iter()));
-
-        let pages = try!(q
-            .as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("pages"))
-            .and_then(|x| x.as_object())
-            .ok_or(Error::JSONPathError));
-        Ok((pages.clone(), try!(self.parse_cont(&q))))
+            ("iiprop", "url")
+        )
     }
 
     pub fn get_images(&self) -> Result<ImagesIter<A>> {
