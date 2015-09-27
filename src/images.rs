@@ -2,16 +2,16 @@ use std::collections::btree_map::IntoIter;
 
 use serde_json::Value;
 
-use super::{Page, Result};
+use super::{Page, Result, http};
 
-pub struct Iter<'a> {
-    page: &'a Page<'a>,
+pub struct Iter<'a, A: 'a + http::HttpClient> {
+    page: &'a Page<'a, A>,
     inner: IntoIter<String, Value>,
     cont: Option<Vec<(String, String)>>
 }
 
-impl<'a> Iter<'a> {
-    pub fn new(page: &'a Page) -> Result<Iter<'a>> {
+impl<'a, A: http::HttpClient> Iter<'a, A> {
+    pub fn new(page: &'a Page<A>) -> Result<Iter<'a, A>> {
         let (array, cont) = try!(page.request_images(&None));
         Ok(Iter {
             page: page,
@@ -30,7 +30,7 @@ impl<'a> Iter<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Image {
     pub url: String,
     pub title: String,
@@ -73,7 +73,7 @@ impl Image {
     }
 }
 
-impl<'a> Iterator for Iter<'a> {
+impl<'a, A: http::HttpClient> Iterator for Iter<'a, A> {
     type Item = Image;
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
