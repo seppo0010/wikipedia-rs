@@ -128,3 +128,23 @@ impl IterItem for Reference {
             })
     }
 }
+
+#[derive(Debug, PartialEq)]
+pub struct Link {
+    pub title: String,
+}
+
+impl IterItem for Link {
+    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
+            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+        page.request_links(&cont)
+    }
+
+    fn from_value(value: &Value) -> Option<Link> {
+        value
+            .as_object()
+            .and_then(|x| x.get("title"))
+            .and_then(|x| x.as_string())
+            .map(|s| Link { title: s.to_owned() })
+    }
+}

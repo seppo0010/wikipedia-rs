@@ -417,6 +417,31 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Iter::new(&self)
     }
 
+    fn request_links(&self, cont: &Option<Vec<(String, String)>>) ->
+            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
+        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+            ("prop", "links"),
+            ("plnamespace", "0"),
+            ("ellimit", &*self.wikipedia.links_results)
+        );
+        a.map(|(pages, cont)| {
+            let page = match pages.into_iter().next() {
+                Some(p) => p,
+                None => return (Vec::new(), None),
+            };
+            (page
+                .as_object()
+                .and_then(|x| x.get("links"))
+                .and_then(|x| x.as_array())
+                .map(|x| x.into_iter().cloned().collect())
+                .unwrap_or(Vec::new()), cont)
+        })
+    }
+
+    pub fn get_links(&self) -> Result<Iter<A, iter::Link>> {
+        Iter::new(&self)
+    }
+
     pub fn get_coordinates(&self) -> Result<Option<(f64, f64)>> {
         let qp = self.identifier.query_param();
         let params = vec![
@@ -874,6 +899,50 @@ mod test {
                     ("action".to_owned(), "query".to_owned()),
                     ("titles".to_owned(), "World".to_owned()),
                     ("lol".to_owned(), "1".to_owned())
+                ]
+                ]);
+    }
+
+    #[test]
+    fn get_links() {
+        let wikipedia = Wikipedia::<MockClient>::default();
+        wikipedia.client.response.lock().unwrap().push("{\"continue\": {\"lol\":\"1\"},\"query\":{\"pages\":{\"a\":{\"links\":[{\"title\": \"Hello\"}]}}}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"links\":[{\"title\": \"World\"}]}}}}".to_owned());
+        let page = wikipedia.page_from_title("World".to_owned());
+        assert_eq!(
+                page.get_links().unwrap().collect::<Vec<_>>(),
+                vec![
+                iter::Link {
+                    title: "Hello".to_owned(),
+                },
+                iter::Link {
+                    title: "World".to_owned(),
+                }
+                ]);
+        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+                vec![
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+                ]);
+        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
+                vec![
+                vec![
+                    ("prop".to_owned(), "links".to_owned()),
+                    ("plnamespace".to_owned(), "0".to_owned()),
+                    ("ellimit".to_owned(), "max".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned()),
+                    ("continue".to_owned(), "".to_owned()),
+                ],
+                vec![
+                    ("prop".to_owned(), "links".to_owned()),
+                    ("plnamespace".to_owned(), "0".to_owned()),
+                    ("ellimit".to_owned(), "max".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned()),
+                    ("lol".to_owned(), "1".to_owned()),
                 ]
                 ]);
     }

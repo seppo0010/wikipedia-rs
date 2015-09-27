@@ -130,4 +130,22 @@ mod tests {
         }
         assert_eq!(set.len(), 7);
     }
+
+    #[test]
+    fn links() {
+        let mut wikipedia = w();
+        wikipedia.links_results = "3".to_owned();
+        let page = wikipedia.page_from_title("Argentina".to_owned());
+        let links = page.get_links().unwrap();
+        let mut c = 0;
+        let mut set = HashSet::new();
+        for r in links {
+            c += 1;
+            set.insert(r.title);
+            if c == 7 {
+                break;
+            }
+        }
+        assert_eq!(set.len(), 7);
+    }
 }
