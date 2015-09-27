@@ -230,4 +230,11 @@ mod tests {
         assert!(page.get_section_content("Examples").unwrap().unwrap()
                 .contains("finance committee meeting"))
     }
+
+    #[test]
+    fn languages() {
+        let languages = w().get_languages().unwrap();
+        assert!(languages.contains(&("en".to_owned(), "English".to_owned())));
+        assert!(languages.contains(&("es".to_owned(), "español".to_owned())));
+    }
 }

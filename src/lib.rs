@@ -122,6 +122,44 @@ impl<A: http::HttpClient> Wikipedia<A> {
         }
     }
 
+    pub fn get_languages(&self) -> Result<Vec<(String, String)>> {
+        let q = try!(self.query(vec![
+                ("meta", "siteinfo"),
+                ("siprop", "languages"),
+                ("format", "json"),
+                ("action", "query"),
+            ].into_iter()));
+
+        Ok(try!(q
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("languages"))
+            .and_then(|x| x.as_array())
+            .ok_or(Error::JSONPathError))
+            .into_iter()
+            .filter_map(|x| {
+                        let o = x.as_object();
+                        Some((
+                            match o
+                                .and_then(|x| x.get("code"))
+                                .and_then(|x| x.as_string())
+                                .map(|x| x.to_owned()) {
+                                    Some(v) => v,
+                                    None => return None,
+                                },
+                            match o
+                                .and_then(|x| x.get("*"))
+                                .and_then(|x| x.as_string())
+                                .map(|x| x.to_owned()) {
+                                    Some(v) => v,
+                                    None => return None,
+                                },
+                        ))
+                    })
+            .collect())
+    }
+
     pub fn base_url(&self) -> String {
         format!("{}{}{}", self.pre_language_url, self.language, self.post_language_url)
     }
@@ -1146,6 +1184,28 @@ mod test {
                     ("format".to_owned(), "json".to_owned()),
                     ("action".to_owned(), "parse".to_owned()),
                     ("pageid".to_owned(), "123".to_owned())
+                    ]]);
+    }
+
+    #[test]
+    fn languages() {
+        let wikipedia = Wikipedia::<MockClient>::default();
+        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"languages\":[{\"*\":\"hello\", \"code\":\"world\"}, {\"*\":\"foo\", \"code\":\"bar\"}]}}".to_owned());
+        assert_eq!(
+                wikipedia.get_languages().unwrap(),
+                vec![
+                    ("world".to_owned(), "hello".to_owned()),
+                    ("bar".to_owned(), "foo".to_owned()),
+                ]
+                );
+        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
+        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
+                vec![vec![
+                    ("meta".to_owned(), "siteinfo".to_owned()),
+                    ("siprop".to_owned(), "languages".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned())
                     ]]);
     }
 }
