@@ -186,4 +186,40 @@ mod tests {
         }
         assert_eq!(set.len(), 7);
     }
+
+    #[test]
+    fn sections() {
+        let wikipedia = w();
+        let page = wikipedia.page_from_title("Bikeshedding".to_owned());
+        assert_eq!(
+                page.get_sections().unwrap(),
+                vec![
+                "Argument".to_owned(),
+                "Examples".to_owned(),
+                "Related principles and formulations".to_owned(),
+                "See also".to_owned(),
+                "References".to_owned(),
+                "Further reading".to_owned(),
+                "External links".to_owned(),
+                ]
+                )
+    }
+
+    #[test]
+    fn sections2() {
+        let wikipedia = w();
+        let page = wikipedia.page_from_pageid("4138548".to_owned());
+        assert_eq!(
+                page.get_sections().unwrap(),
+                vec![
+                "Argument".to_owned(),
+                "Examples".to_owned(),
+                "Related principles and formulations".to_owned(),
+                "See also".to_owned(),
+                "References".to_owned(),
+                "Further reading".to_owned(),
+                "External links".to_owned(),
+                ]
+                )
+    }
 }

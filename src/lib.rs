@@ -579,6 +579,32 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             try!(coord.get("lon").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)),
         )))
     }
+
+    pub fn get_sections(&self) -> Result<Vec<String>> {
+        let pageid = try!(self.get_pageid());
+        let params = vec![
+            ("prop", "sections"),
+            ("format", "json"),
+            ("action", "parse"),
+            ("pageid", &*pageid),
+        ];
+        let q = try!(self.wikipedia.query(params.into_iter()));
+
+        Ok(try!(q
+            .as_object()
+            .and_then(|x| x.get("parse"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("sections"))
+            .and_then(|x| x.as_array())
+            .ok_or(Error::JSONPathError))
+            .into_iter()
+            .filter_map(|x| x.as_object()
+                    .and_then(|x| x.get("line"))
+                    .and_then(|x| x.as_string())
+                    .map(|x| x.to_owned())
+                    )
+            .collect())
+    }
 }
 
 impl<'a, A: http::HttpClient> PartialEq<Page<'a, A>> for Page<'a, A> {
@@ -1083,5 +1109,25 @@ mod test {
                     ("lol".to_owned(), "1".to_owned()),
                 ]
                 ]);
+    }
+
+    #[test]
+    fn sections() {
+        let wikipedia = Wikipedia::<MockClient>::default();
+        wikipedia.client.response.lock().unwrap().push("{\"parse\":{\"sections\":[{\"line\":\"hello\"}, {\"line\":\"world\"}]}}".to_owned());
+        let page = wikipedia.page_from_pageid("123".to_owned());
+        assert_eq!(
+                page.get_sections().unwrap(),
+                vec!["hello".to_owned(), "world".to_owned()]
+                );
+        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
+        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
+                vec![vec![
+                    ("prop".to_owned(), "sections".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "parse".to_owned()),
+                    ("pageid".to_owned(), "123".to_owned())
+                    ]]);
     }
 }
