@@ -374,6 +374,48 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
     pub fn get_images(&self) -> Result<ImagesIter<A>> {
         ImagesIter::new(&self)
     }
+
+    pub fn get_coordinates(&self) -> Result<Option<(f64, f64)>> {
+        let qp = self.identifier.query_param();
+        let params = vec![
+            ("prop", "coordinates"),
+            ("colimit", "max"),
+            ("redirects", ""),
+            ("format", "json"),
+            ("action", "query"),
+            (&*qp.0, &*qp.1),
+        ];
+        let q = try!(self.wikipedia.query(params.into_iter()));
+
+        match self.redirect(&q) {
+            Some(r) => return Page::from_title(&self.wikipedia, r).get_coordinates(),
+            None => (),
+        }
+        let pages = try!(q
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("pages"))
+            .and_then(|x| x.as_object())
+            .ok_or(Error::JSONPathError));
+        let pageid = match pages.keys().next() {
+            Some(p) => p,
+            None => return Err(Error::JSONPathError),
+        };
+        let coord = match pages.get(pageid)
+                .and_then(|x| x.as_object())
+                .and_then(|x| x.get("coordinates"))
+                .and_then(|x| x.as_array())
+                .and_then(|x| x.into_iter().next())
+                .and_then(|x| x.as_object()) {
+            Some(c) => c,
+            None => return Ok(None),
+        };
+        Ok(Some((
+            try!(coord.get("lat").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)),
+            try!(coord.get("lon").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)),
+        )))
+    }
 }
 
 impl<'a, A: http::HttpClient> PartialEq<Page<'a, A>> for Page<'a, A> {
@@ -709,5 +751,47 @@ mod test {
                 ]
                 ]
                 );
+    }
+
+    #[test]
+    fn page_coordinates() {
+        let wikipedia = Wikipedia::<MockClient>::default();
+        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"coordinates\":[{\"lat\": 2.1, \"lon\":-1.3}]}}}}".to_owned());
+        let page = wikipedia.page_from_title("World".to_owned());
+        let coordinates = page.get_coordinates().unwrap().unwrap();
+        assert_eq!(
+                coordinates,
+                (2.1, -1.3)
+                );
+        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
+        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
+                vec![vec![
+                    ("prop".to_owned(), "coordinates".to_owned()),
+                    ("colimit".to_owned(), "max".to_owned()),
+                    ("redirects".to_owned(), "".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned())
+                    ]]);
+    }
+
+    #[test]
+    fn page_no_coordinates() {
+        let wikipedia = Wikipedia::<MockClient>::default();
+        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{}}}}".to_owned());
+        let page = wikipedia.page_from_title("World".to_owned());
+        assert!(page.get_coordinates().unwrap().is_none());
+        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
+        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
+                vec![vec![
+                    ("prop".to_owned(), "coordinates".to_owned()),
+                    ("colimit".to_owned(), "max".to_owned()),
+                    ("redirects".to_owned(), "".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned())
+                    ]]);
     }
 }

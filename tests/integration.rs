@@ -95,4 +95,20 @@ mod tests {
         }
         assert_eq!(set.len(), 11);
     }
+
+    #[test]
+    fn coordinates() {
+        let wikipedia = w();
+        let page = wikipedia.page_from_title("San Francisco".to_owned());
+        let (lat, lon) = page.get_coordinates().unwrap().unwrap();
+        assert!(lat > 0.0);
+        assert!(lon < 0.0);
+    }
+
+    #[test]
+    fn no_coordinates() {
+        let wikipedia = w();
+        let page = wikipedia.page_from_title("Bikeshedding".to_owned());
+        assert!(page.get_coordinates().unwrap().is_none());
+    }
 }
