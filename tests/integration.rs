@@ -47,6 +47,26 @@ mod tests {
     }
 
     #[test]
+    fn title() {
+        let wikipedia = w();
+        let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
+        assert_eq!(page.get_title().unwrap(), "Parkinson's law of triviality".to_owned());
+        let page = wikipedia.page_from_pageid("4138548".to_owned());
+        assert_eq!(page.get_title().unwrap(), "Parkinson's law of triviality".to_owned());
+    }
+
+    #[test]
+    fn pageid() {
+        let wikipedia = w();
+        let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
+        assert_eq!(page.get_pageid().unwrap(), "4138548".to_owned());
+        let page = wikipedia.page_from_title("Bikeshedding".to_owned());
+        assert_eq!(page.get_pageid().unwrap(), "4138548".to_owned());
+        let page = wikipedia.page_from_pageid("4138548".to_owned());
+        assert_eq!(page.get_pageid().unwrap(), "4138548".to_owned());
+    }
+
+    #[test]
     fn page_html_content() {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());

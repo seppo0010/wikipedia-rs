@@ -234,6 +234,76 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Page { wikipedia: wikipedia, identifier: TitlePageId::PageId(pageid) }
     }
 
+    pub fn get_pageid(&self) -> Result<String> {
+        match self.identifier {
+            TitlePageId::PageId(ref s) => Ok(s.clone()),
+            TitlePageId::Title(_) => {
+                let qp = self.identifier.query_param();
+                let q = try!(self.wikipedia.query(vec![
+                    ("prop", "info|pageprops"),
+                    ("inprop", "url"),
+                    ("ppprop", "disambiguation"),
+                    ("redirects", ""),
+                    ("format", "json"),
+                    ("action", "query"),
+                    (&*qp.0, &*qp.1),
+                ].into_iter()));
+
+                match self.redirect(&q) {
+                    Some(r) => return Page::from_title(&self.wikipedia, r).get_pageid(),
+                    None => (),
+                }
+                let pages = try!(q
+                    .as_object()
+                    .and_then(|x| x.get("query"))
+                    .and_then(|x| x.as_object())
+                    .and_then(|x| x.get("pages"))
+                    .and_then(|x| x.as_object())
+                    .ok_or(Error::JSONPathError));
+                pages.keys().cloned().next().ok_or(Error::JSONPathError)
+            }
+        }
+    }
+
+    pub fn get_title(&self) -> Result<String> {
+        match self.identifier {
+            TitlePageId::Title(ref s) => Ok(s.clone()),
+            TitlePageId::PageId(_) => {
+                let qp = self.identifier.query_param();
+                let q = try!(self.wikipedia.query(vec![
+                    ("prop", "info|pageprops"),
+                    ("inprop", "url"),
+                    ("ppprop", "disambiguation"),
+                    ("redirects", ""),
+                    ("format", "json"),
+                    ("action", "query"),
+                    (&*qp.0, &*qp.1),
+                ].into_iter()));
+
+                match self.redirect(&q) {
+                    Some(r) => return Ok(r),
+                    None => (),
+                }
+                let pages = try!(q
+                    .as_object()
+                    .and_then(|x| x.get("query"))
+                    .and_then(|x| x.as_object())
+                    .and_then(|x| x.get("pages"))
+                    .and_then(|x| x.as_object())
+                    .ok_or(Error::JSONPathError));
+                let page = match pages.values().next() {
+                    Some(p) => p,
+                    None => return Err(Error::JSONPathError),
+                };
+                Ok(try!(page.as_object()
+                    .and_then(|x| x.get("title"))
+                    .and_then(|x| x.as_string())
+                    .ok_or(Error::JSONPathError))
+                    .to_owned())
+            },
+        }
+    }
+
     fn redirect(&self, q: &serde_json::Value) -> Option<String> {
         q.as_object()
             .and_then(|x| x.get("query"))
