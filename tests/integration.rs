@@ -222,4 +222,12 @@ mod tests {
                 ]
                 )
     }
+
+    #[test]
+    fn section_content() {
+        let wikipedia = w();
+        let page = wikipedia.page_from_pageid("4138548".to_owned());
+        assert!(page.get_section_content("Examples").unwrap().unwrap()
+                .contains("finance committee meeting"))
+    }
 }

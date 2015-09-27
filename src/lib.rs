@@ -605,6 +605,21 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                     )
             .collect())
     }
+
+    pub fn get_section_content(&self, title: &str) -> Result<Option<String>> {
+        // the "Edit" seems to be included in the content... I cannot explain it
+        let headr = format!("== {}Edit ==", title);
+        let content = try!(self.get_content());
+        let index = match content.find(&*headr) {
+            Some(i) => headr.len() + i,
+            None => return Ok(None),
+        };
+        let end = match content[index..].find("==") {
+            Some(i) => index + i,
+            None => content.len(),
+        };
+        Ok(Some(content[index..end].to_owned()))
+    }
 }
 
 impl<'a, A: http::HttpClient> PartialEq<Page<'a, A>> for Page<'a, A> {
