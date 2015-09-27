@@ -98,6 +98,7 @@ pub struct Wikipedia<A: http::HttpClient> {
     pub search_results:u32,
     pub images_results:String,
     pub links_results:String,
+    pub categories_results:String,
 }
 
 impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
@@ -112,6 +113,7 @@ impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
             search_results: 10,
             images_results: "max".to_owned(),
             links_results: "max".to_owned(),
+            categories_results: "max".to_owned(),
         }
     }
 }
@@ -439,6 +441,30 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
     }
 
     pub fn get_links(&self) -> Result<Iter<A, iter::Link>> {
+        Iter::new(&self)
+    }
+
+    fn request_categories(&self, cont: &Option<Vec<(String, String)>>) ->
+            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
+        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+            ("prop", "categories"),
+            ("cllimit", &*self.wikipedia.categories_results)
+        );
+        a.map(|(pages, cont)| {
+            let page = match pages.into_iter().next() {
+                Some(p) => p,
+                None => return (Vec::new(), None),
+            };
+            (page
+                .as_object()
+                .and_then(|x| x.get("categories"))
+                .and_then(|x| x.as_array())
+                .map(|x| x.into_iter().cloned().collect())
+                .unwrap_or(Vec::new()), cont)
+        })
+    }
+
+    pub fn get_categories(&self) -> Result<Iter<A, iter::Category>> {
         Iter::new(&self)
     }
 
@@ -939,6 +965,48 @@ mod test {
                     ("prop".to_owned(), "links".to_owned()),
                     ("plnamespace".to_owned(), "0".to_owned()),
                     ("ellimit".to_owned(), "max".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned()),
+                    ("lol".to_owned(), "1".to_owned()),
+                ]
+                ]);
+    }
+
+    #[test]
+    fn get_categories() {
+        let wikipedia = Wikipedia::<MockClient>::default();
+        wikipedia.client.response.lock().unwrap().push("{\"continue\": {\"lol\":\"1\"},\"query\":{\"pages\":{\"a\":{\"categories\":[{\"title\": \"Hello\"}]}}}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"categories\":[{\"title\": \"Category: World\"}]}}}}".to_owned());
+        let page = wikipedia.page_from_title("World".to_owned());
+        assert_eq!(
+                page.get_categories().unwrap().collect::<Vec<_>>(),
+                vec![
+                iter::Category {
+                    title: "Hello".to_owned(),
+                },
+                iter::Category {
+                    title: "World".to_owned(),
+                }
+                ]);
+        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+                vec![
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+                ]);
+        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
+                vec![
+                vec![
+                    ("prop".to_owned(), "categories".to_owned()),
+                    ("cllimit".to_owned(), "max".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned()),
+                    ("continue".to_owned(), "".to_owned()),
+                ],
+                vec![
+                    ("prop".to_owned(), "categories".to_owned()),
+                    ("cllimit".to_owned(), "max".to_owned()),
                     ("format".to_owned(), "json".to_owned()),
                     ("action".to_owned(), "query".to_owned()),
                     ("titles".to_owned(), "World".to_owned()),

@@ -148,3 +148,29 @@ impl IterItem for Link {
             .map(|s| Link { title: s.to_owned() })
     }
 }
+
+#[derive(Debug, PartialEq)]
+pub struct Category {
+    pub title: String,
+}
+
+impl IterItem for Category {
+    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
+            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+        page.request_categories(&cont)
+    }
+
+    fn from_value(value: &Value) -> Option<Category> {
+        value
+            .as_object()
+            .and_then(|x| x.get("title"))
+            .and_then(|x| x.as_string())
+            .map(|s| Category {
+                title: if s.starts_with("Category: ") {
+                    s[10..].to_owned()
+                } else {
+                    s.to_owned()
+                },
+            })
+    }
+}

@@ -148,4 +148,22 @@ mod tests {
         }
         assert_eq!(set.len(), 7);
     }
+
+    #[test]
+    fn categories() {
+        let mut wikipedia = w();
+        wikipedia.categories_results = "3".to_owned();
+        let page = wikipedia.page_from_title("Argentina".to_owned());
+        let categories = page.get_links().unwrap();
+        let mut c = 0;
+        let mut set = HashSet::new();
+        for ca in categories {
+            c += 1;
+            set.insert(ca.title);
+            if c == 7 {
+                break;
+            }
+        }
+        assert_eq!(set.len(), 7);
+    }
 }
