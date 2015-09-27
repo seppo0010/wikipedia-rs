@@ -1,5 +1,4 @@
-use std::collections::btree_map::IntoIter;
-use std::collections::BTreeMap;
+use std::vec::IntoIter;
 use std::marker::PhantomData;
 
 use serde_json::Value;
@@ -8,7 +7,7 @@ use super::{Page, Result, http};
 
 pub struct Iter<'a, A: 'a + http::HttpClient, B: IterItem> {
     page: &'a Page<'a, A>,
-    inner: IntoIter<String, Value>,
+    inner: IntoIter<Value>,
     cont: Option<Vec<(String, String)>>,
     phantom: PhantomData<B>
 }
@@ -38,10 +37,10 @@ impl<'a, A: http::HttpClient, B: IterItem> Iterator for Iter<'a, A, B> {
     type Item = B;
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
-            Some(ref v) => B::from_value(&v.1),
+            Some(ref v) => B::from_value(&v),
             None => match self.cont {
                 Some(_) => match self.fetch_next() {
-                    Ok(_) => self.inner.next().and_then(|x| B::from_value(&x.1)),
+                    Ok(_) => self.inner.next().and_then(|x| B::from_value(&x)),
                     Err(_) => None,
                 },
                 None => None,
@@ -52,7 +51,7 @@ impl<'a, A: http::HttpClient, B: IterItem> Iterator for Iter<'a, A, B> {
 
 pub trait IterItem: Sized {
     fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(BTreeMap<String, Value>, Option<Vec<(String, String)>>)>;
+            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)>;
     fn from_value(value: &Value) -> Option<Self>;
 }
 
@@ -65,7 +64,7 @@ pub struct Image {
 
 impl IterItem for Image {
     fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(BTreeMap<String, Value>, Option<Vec<(String, String)>>)> {
+            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
         page.request_images(&cont)
     }
 
@@ -101,5 +100,31 @@ impl IterItem for Image {
             title: title.to_owned(),
             description_url: description_url.to_owned(),
         })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Reference {
+    pub url: String,
+}
+
+impl IterItem for Reference {
+    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
+            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+        page.request_extlinks(&cont)
+    }
+
+    fn from_value(value: &Value) -> Option<Reference> {
+        value
+            .as_object()
+            .and_then(|x| x.get("*"))
+            .and_then(|x| x.as_string())
+            .map(|s| Reference {
+                url: if s.starts_with("http:") {
+                    s.to_owned()
+                } else {
+                    format!("http:{}", s)
+                },
+            })
     }
 }

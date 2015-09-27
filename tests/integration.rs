@@ -111,4 +111,23 @@ mod tests {
         let page = wikipedia.page_from_title("Bikeshedding".to_owned());
         assert!(page.get_coordinates().unwrap().is_none());
     }
+
+    #[test]
+    fn references() {
+        let mut wikipedia = w();
+        wikipedia.links_results = "3".to_owned();
+        let page = wikipedia.page_from_title("Argentina".to_owned());
+        let references = page.get_references().unwrap();
+        let mut c = 0;
+        let mut set = HashSet::new();
+        for r in references {
+            assert!(r.url.starts_with("http"));
+            c += 1;
+            set.insert(r.url);
+            if c == 7 {
+                break;
+            }
+        }
+        assert_eq!(set.len(), 7);
+    }
 }

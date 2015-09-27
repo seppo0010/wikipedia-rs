@@ -3,7 +3,6 @@
 extern crate serde_json;
 
 use std::cmp::PartialEq;
-use std::collections::BTreeMap;
 use std::io;
 use std::result;
 
@@ -55,7 +54,8 @@ macro_rules! cont {
             .and_then(|x| x.get("pages"))
             .and_then(|x| x.as_object())
             .ok_or(Error::JSONPathError));
-        Ok((pages.clone(), try!($this.parse_cont(&q))))
+
+        Ok((pages.values().cloned().collect(), try!($this.parse_cont(&q))))
     }}
 }
 
@@ -97,6 +97,7 @@ pub struct Wikipedia<A: http::HttpClient> {
     pub language:String,
     pub search_results:u32,
     pub images_results:String,
+    pub links_results:String,
 }
 
 impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
@@ -110,6 +111,7 @@ impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
             language: "en".to_owned(),
             search_results: 10,
             images_results: "max".to_owned(),
+            links_results: "max".to_owned(),
         }
     }
 }
@@ -363,14 +365,22 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         };
         let mut cont_v = vec![];
         for (k, v) in cont.into_iter() {
-            let value = try!(v.as_string().ok_or(Error::JSONPathError));
-            cont_v.push((k.clone(), value.to_owned()));
+            let value = match *v {
+                serde_json::Value::Null => "".to_owned(),
+                serde_json::Value::Bool(b) => if b { "1" } else { "0" }.to_owned(),
+                serde_json::Value::I64(i) => format!("{}", i),
+                serde_json::Value::U64(u) => format!("{}", u),
+                serde_json::Value::F64(f) => format!("{}", f),
+                serde_json::Value::String(ref s) => s.clone(),
+                _ => return Err(Error::JSONPathError),
+            };
+            cont_v.push((k.clone(), value));
         }
         Ok(Some(cont_v))
     }
 
     fn request_images(&self, cont: &Option<Vec<(String, String)>>) ->
-            Result<(BTreeMap<String, serde_json::Value>, Option<Vec<(String, String)>>)> {
+            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
         cont!(self, cont,
             ("generator", "images"),
             ("gimlimit", &*self.wikipedia.images_results),
@@ -380,6 +390,30 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
     }
 
     pub fn get_images(&self) -> Result<Iter<A, iter::Image>> {
+        Iter::new(&self)
+    }
+
+    fn request_extlinks(&self, cont: &Option<Vec<(String, String)>>) ->
+            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
+        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+            ("prop", "extlinks"),
+            ("ellimit", &*self.wikipedia.links_results)
+        );
+        a.map(|(pages, cont)| {
+            let page = match pages.into_iter().next() {
+                Some(p) => p,
+                None => return (Vec::new(), None),
+            };
+            (page
+                .as_object()
+                .and_then(|x| x.get("extlinks"))
+                .and_then(|x| x.as_array())
+                .map(|x| x.into_iter().cloned().collect())
+                .unwrap_or(Vec::new()), cont)
+        })
+    }
+
+    pub fn get_references(&self) -> Result<Iter<A, iter::Reference>> {
         Iter::new(&self)
     }
 
@@ -801,5 +835,46 @@ mod test {
                     ("action".to_owned(), "query".to_owned()),
                     ("titles".to_owned(), "World".to_owned())
                     ]]);
+    }
+
+    #[test]
+    fn get_references() {
+        let wikipedia = Wikipedia::<MockClient>::default();
+        wikipedia.client.response.lock().unwrap().push("{\"continue\": {\"lol\":\"1\"},\"query\":{\"pages\":{\"a\":{\"extlinks\":[{\"*\": \"//example.com/reference1.html\"}]}}}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"extlinks\":[{\"*\": \"//example.com/reference2.html\"}]}}}}".to_owned());
+        let page = wikipedia.page_from_title("World".to_owned());
+        assert_eq!(
+                page.get_references().unwrap().collect::<Vec<_>>(),
+                vec![
+                iter::Reference {
+                    url: "http://example.com/reference1.html".to_owned(),
+                },
+                iter::Reference {
+                    url: "http://example.com/reference2.html".to_owned(),
+                }
+                ]);
+        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+                vec![
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+                ]);
+        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
+                vec![vec![
+                    ("prop".to_owned(), "extlinks".to_owned()),
+                    ("ellimit".to_owned(), "max".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned()),
+                    ("continue".to_owned(), "".to_owned())
+                ],
+                vec![
+                    ("prop".to_owned(), "extlinks".to_owned()),
+                    ("ellimit".to_owned(), "max".to_owned()),
+                    ("format".to_owned(), "json".to_owned()),
+                    ("action".to_owned(), "query".to_owned()),
+                    ("titles".to_owned(), "World".to_owned()),
+                    ("lol".to_owned(), "1".to_owned())
+                ]
+                ]);
     }
 }
