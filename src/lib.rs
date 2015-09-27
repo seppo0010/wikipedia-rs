@@ -103,7 +103,12 @@ pub struct Wikipedia<A: http::HttpClient> {
 
 impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
     fn default() -> Self {
-        let mut client = A::default();
+        Wikipedia::new(A::default())
+    }
+}
+
+impl<A: http::HttpClient> Wikipedia<A> {
+    pub fn new(mut client: A) -> Self {
         client.user_agent("wikipedia (https://github.com/seppo0010/wikipedia-rs)".to_owned());
         Wikipedia {
             client: client,
@@ -116,9 +121,7 @@ impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
             categories_results: "max".to_owned(),
         }
     }
-}
 
-impl<A: http::HttpClient> Wikipedia<A> {
     pub fn base_url(&self) -> String {
         format!("{}{}{}", self.pre_language_url, self.language, self.post_language_url)
     }
