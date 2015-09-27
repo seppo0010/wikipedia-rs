@@ -7,9 +7,9 @@ use std::collections::BTreeMap;
 use std::io;
 use std::result;
 
-pub mod images;
+pub mod iter;
 pub mod http;
-pub use images::Iter as ImagesIter;
+pub use iter::Iter;
 
 const LANGUAGE_URL_MARKER:&'static str = "{language}";
 
@@ -379,8 +379,8 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         )
     }
 
-    pub fn get_images(&self) -> Result<ImagesIter<A>> {
-        ImagesIter::new(&self)
+    pub fn get_images(&self) -> Result<Iter<A, iter::Image>> {
+        Iter::new(&self)
     }
 
     pub fn get_coordinates(&self) -> Result<Option<(f64, f64)>> {
@@ -445,7 +445,7 @@ impl<'a, A: http::HttpClient> PartialEq<Page<'a, A>> for Page<'a, A> {
 mod test {
     use super::Wikipedia;
     use super::http::HttpClient;
-    use super::images;
+    use super::iter;
     use std::sync::Mutex;
 
     struct MockClient {
@@ -719,12 +719,12 @@ mod test {
         assert_eq!(
                 images,
                 vec![
-                images::Image {
+                iter::Image {
                     url: "http://example.com/image1.jpg".to_owned(),
                     title: "Image 1".to_owned(),
                     description_url: "http://example.com/image1.jpg.html".to_owned(),
                 },
-                images::Image {
+                iter::Image {
                     url: "http://example.com/image2.jpg".to_owned(),
                     title: "Image 2".to_owned(),
                     description_url: "http://example.com/image2.jpg.html".to_owned(),

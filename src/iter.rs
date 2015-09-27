@@ -1,33 +1,59 @@
 use std::collections::btree_map::IntoIter;
+use std::collections::BTreeMap;
+use std::marker::PhantomData;
 
 use serde_json::Value;
 
 use super::{Page, Result, http};
 
-pub struct Iter<'a, A: 'a + http::HttpClient> {
+pub struct Iter<'a, A: 'a + http::HttpClient, B: IterItem> {
     page: &'a Page<'a, A>,
     inner: IntoIter<String, Value>,
-    cont: Option<Vec<(String, String)>>
+    cont: Option<Vec<(String, String)>>,
+    phantom: PhantomData<B>
 }
 
-impl<'a, A: http::HttpClient> Iter<'a, A> {
-    pub fn new(page: &'a Page<A>) -> Result<Iter<'a, A>> {
-        let (array, cont) = try!(page.request_images(&None));
+impl<'a, A: http::HttpClient, B: IterItem> Iter<'a, A, B> {
+    pub fn new(page: &'a Page<A>) -> Result<Iter<'a, A, B>> {
+        let (array, cont) = try!(B::request_next(page, &None));
         Ok(Iter {
             page: page,
             inner: array.into_iter(),
             cont: cont,
+            phantom: PhantomData,
         })
     }
 
     fn fetch_next(&mut self) -> Result <()> {
         if self.cont.is_some() {
-            let (array, cont) = try!(self.page.request_images(&self.cont));
+            let (array, cont) = try!(B::request_next(self.page, &self.cont));
             self.inner = array.into_iter();
             self.cont = cont;
         }
         Ok(())
     }
+}
+
+impl<'a, A: http::HttpClient, B: IterItem> Iterator for Iter<'a, A, B> {
+    type Item = B;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner.next() {
+            Some(ref v) => B::from_value(&v.1),
+            None => match self.cont {
+                Some(_) => match self.fetch_next() {
+                    Ok(_) => self.inner.next().and_then(|x| B::from_value(&x.1)),
+                    Err(_) => None,
+                },
+                None => None,
+            }
+        }
+    }
+}
+
+pub trait IterItem: Sized {
+    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
+            -> Result<(BTreeMap<String, Value>, Option<Vec<(String, String)>>)>;
+    fn from_value(value: &Value) -> Option<Self>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -37,8 +63,13 @@ pub struct Image {
     pub description_url: String,
 }
 
-impl Image {
-    fn new(value: &Value) -> Option<Image>{
+impl IterItem for Image {
+    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
+            -> Result<(BTreeMap<String, Value>, Option<Vec<(String, String)>>)> {
+        page.request_images(&cont)
+    }
+
+    fn from_value(value: &Value) -> Option<Image> {
         let obj = match value.as_object() {
             Some(o) => o,
             None => return None,
@@ -70,21 +101,5 @@ impl Image {
             title: title.to_owned(),
             description_url: description_url.to_owned(),
         })
-    }
-}
-
-impl<'a, A: http::HttpClient> Iterator for Iter<'a, A> {
-    type Item = Image;
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.inner.next() {
-            Some(ref v) => Image::new(&v.1),
-            None => match self.cont {
-                Some(_) => match self.fetch_next() {
-                    Ok(_) => self.inner.next().and_then(|x| Image::new(&x.1)),
-                    Err(_) => None,
-                },
-                None => None,
-            }
-        }
     }
 }
