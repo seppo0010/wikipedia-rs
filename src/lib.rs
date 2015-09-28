@@ -1,3 +1,14 @@
+//! Access wikipedia articles from Rust.
+//!
+//! # Examples
+//! ```
+//! extern crate wikipedia;
+//!
+//! let wiki = wikipedia::Wikipedia::<wikipedia::http::hyper::Client>::default();
+//! let page = wiki.page_from_title("Club Atletico River Plate".to_owned());
+//! let content = page.get_content().unwrap();
+//! assert!(content.contains("B Nacional"));
+//! ```
 #[cfg(feature="http-client")] extern crate hyper;
 #[cfg(feature="http-client")] extern crate url;
 extern crate serde_json;
@@ -59,13 +70,18 @@ macro_rules! cont {
     }}
 }
 
-
+/// Wikipedia failed to fetch some information
 #[derive(Debug)]
 pub enum Error {
+    /// Some error communicating with the server
     HTTPError,
+    /// Error reading response
     IOError(io::Error),
+    /// Failed to parse JSON response
     JSONError(serde_json::error::Error),
+    /// Missing required keys in the JSON response
     JSONPathError,
+    /// One of the parameters provided (identified by `String`) is invalid
     InvalidParameter(String),
 }
 
@@ -91,14 +107,22 @@ pub type Result<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Wikipedia<A: http::HttpClient> {
+    /// HttpClient struct.
     pub client: A,
-    pub pre_language_url:String,
-    pub post_language_url:String,
-    pub language:String,
-    pub search_results:u32,
-    pub images_results:String,
-    pub links_results:String,
-    pub categories_results:String,
+    /// Url is created by concatenating `pre_language_url` + `language` + `post_language_url`.
+    pub pre_language_url: String,
+    pub post_language_url: String,
+    pub language: String,
+    /// Number of results to fetch when searching.
+    pub search_results: u32,
+    /// Number of images to fetch in each request when calling `get_images`.
+    /// The iterator will go through all of them, fetching pages of this size.
+    /// It can be the string "max" to fetch as many as possible on every request.
+    pub images_results: String,
+    /// Like `images_results`, for links and references.
+    pub links_results: String,
+    /// Like `images_results`, for categories.
+    pub categories_results: String,
 }
 
 impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
@@ -108,6 +132,7 @@ impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
 }
 
 impl<A: http::HttpClient> Wikipedia<A> {
+    /// Creates a new object using the provided client and default values.
     pub fn new(mut client: A) -> Self {
         client.user_agent("wikipedia (https://github.com/seppo0010/wikipedia-rs)".to_owned());
         Wikipedia {
@@ -122,6 +147,8 @@ impl<A: http::HttpClient> Wikipedia<A> {
         }
     }
 
+    /// Returns a list of languages in the form of (`identifier`, `language`),
+    /// for example [("en", "English"), ("es", "Español")]
     pub fn get_languages(&self) -> Result<Vec<(String, String)>> {
         let q = try!(self.query(vec![
                 ("meta", "siteinfo"),
@@ -160,10 +187,13 @@ impl<A: http::HttpClient> Wikipedia<A> {
             .collect())
     }
 
+    /// Returns the api url
     pub fn base_url(&self) -> String {
         format!("{}{}{}", self.pre_language_url, self.language, self.post_language_url)
     }
 
+    /// Updates the url format. The substring `{language}` will be replaced
+    /// with the selected language.
     pub fn set_base_url(&mut self, base_url: &str) {
         let index = match base_url.find(LANGUAGE_URL_MARKER) {
             Some(i) => i,
@@ -184,6 +214,17 @@ impl<A: http::HttpClient> Wikipedia<A> {
         Ok(try!(serde_json::from_str(&*response_str)))
     }
 
+    /// Searches for a string and returns a list of relevant page titles.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// extern crate wikipedia;
+    ///
+    /// let wiki = wikipedia::Wikipedia::<wikipedia::http::hyper::Client>::default();
+    /// let results = wiki.search("keyboard").unwrap();
+    /// assert!(results.contains(&"Computer keyboard".to_owned()));
+    /// ```
     pub fn search(&self, query: &str) -> Result<Vec<String>> {
         let results = &*format!("{}", self.search_results);
         let data = try!(self.query(vec![
@@ -198,6 +239,17 @@ impl<A: http::HttpClient> Wikipedia<A> {
         Ok(results!(data, "search"))
     }
 
+    /// Search articles within `radius` meters of `latitude` and `longitude`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// extern crate wikipedia;
+    ///
+    /// let wiki = wikipedia::Wikipedia::<wikipedia::http::hyper::Client>::default();
+    /// let results = wiki.geosearch(40.750556,-73.993611, 20).unwrap();
+    /// assert!(results.contains(&"Madison Square Garden".to_owned()));
+    /// ```
     pub fn geosearch(&self, latitude: f64, longitude: f64, radius: u16) -> Result<Vec<String>> {
         if latitude < -90.0 || latitude > 90.0 {
             return Err(Error::InvalidParameter("latitude".to_string()))
@@ -220,6 +272,7 @@ impl<A: http::HttpClient> Wikipedia<A> {
         Ok(results!(data, "geosearch"))
     }
 
+    /// Fetches `count` random articles' title.
     pub fn random_count(&self, count: u8) -> Result<Vec<String>> {
         let data = try!(self.query(vec![
                 ("list", "random"),
@@ -232,14 +285,17 @@ impl<A: http::HttpClient> Wikipedia<A> {
         Ok(r)
     }
 
+    /// Fetches a random article's title.
     pub fn random(&self) -> Result<Option<String>> {
         Ok(try!(self.random_count(1)).into_iter().next())
     }
 
+    /// Creates a new `Page` given a `title`.
     pub fn page_from_title<'a>(&'a self, title: String) -> Page<'a, A> {
         Page::from_title(self, title)
     }
 
+    /// Creates a new `Page` given a `pageid`.
     pub fn page_from_pageid<'a>(&'a self, pageid: String) -> Page<'a, A> {
         Page::from_pageid(self, pageid)
     }
@@ -266,15 +322,19 @@ pub struct Page<'a, A: 'a + http::HttpClient> {
     identifier: TitlePageId,
 }
 
+/// A wikipedia article.
 impl<'a, A: http::HttpClient> Page<'a, A> {
+    /// Creates a new `Page` given a `title`.
     pub fn from_title(wikipedia: &'a Wikipedia<A>, title: String) -> Page<A> {
         Page { wikipedia: wikipedia, identifier: TitlePageId::Title(title) }
     }
 
+    /// Creates a new `Page` given a `pageid`.
     pub fn from_pageid(wikipedia: &'a Wikipedia<A>, pageid: String) -> Page<A> {
         Page { wikipedia: wikipedia, identifier: TitlePageId::PageId(pageid) }
     }
 
+    /// Gets the `Page`'s `pageid`.
     pub fn get_pageid(&self) -> Result<String> {
         match self.identifier {
             TitlePageId::PageId(ref s) => Ok(s.clone()),
@@ -306,6 +366,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         }
     }
 
+    /// Gets the `Page`'s `title`.
     pub fn get_title(&self) -> Result<String> {
         match self.identifier {
             TitlePageId::Title(ref s) => Ok(s.clone()),
@@ -345,6 +406,8 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         }
     }
 
+    /// If the `Page` redirects to another one it returns its title, otherwise
+    /// returns None.
     fn redirect(&self, q: &serde_json::Value) -> Option<String> {
         q.as_object()
             .and_then(|x| x.get("query"))
@@ -358,6 +421,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .map(|x| x.to_owned())
     }
 
+    /// Gets the markdown content of the article.
     pub fn get_content(&self) -> Result<String> {
         let qp = self.identifier.query_param();
         let q = try!(self.wikipedia.query(vec![
@@ -393,6 +457,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .to_owned())
     }
 
+    /// Gets the html content of the article.
     pub fn get_html_content(&self) -> Result<String> {
         let qp = self.identifier.query_param();
         let q = try!(self.wikipedia.query(vec![
@@ -433,6 +498,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .to_owned())
     }
 
+    /// Gets a summary of the article.
     pub fn get_summary(&self) -> Result<String> {
         let qp = self.identifier.query_param();
         let q = try!(self.wikipedia.query(vec![
@@ -468,6 +534,8 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .to_owned())
     }
 
+    /// Receive a json object and extracts any `continue` parameters to be
+    /// used when browsing following pages.
     fn parse_cont(&self, q: &serde_json::Value) -> Result<Option<Vec<(String, String)>>> {
         let cont = match q
             .as_object()
@@ -502,6 +570,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         )
     }
 
+    /// Creates an iterator to view all images in the `Page`.
     pub fn get_images(&self) -> Result<Iter<A, iter::Image>> {
         Iter::new(&self)
     }
@@ -526,6 +595,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         })
     }
 
+    /// Creates an iterator to view all references (external links) in the `Page`.
     pub fn get_references(&self) -> Result<Iter<A, iter::Reference>> {
         Iter::new(&self)
     }
@@ -551,6 +621,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         })
     }
 
+    /// Creates an iterator to view all internal links in the `Page`.
     pub fn get_links(&self) -> Result<Iter<A, iter::Link>> {
         Iter::new(&self)
     }
@@ -575,10 +646,12 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         })
     }
 
+    /// Creates an iterator to view all categories of the `Page`.
     pub fn get_categories(&self) -> Result<Iter<A, iter::Category>> {
         Iter::new(&self)
     }
 
+    /// Returns the latitude and longitude associated to the `Page` if any.
     pub fn get_coordinates(&self) -> Result<Option<(f64, f64)>> {
         let qp = self.identifier.query_param();
         let params = vec![
@@ -621,6 +694,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         )))
     }
 
+    /// Fetches all sections of the article.
     pub fn get_sections(&self) -> Result<Vec<String>> {
         let pageid = try!(self.get_pageid());
         let params = vec![
@@ -647,6 +721,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .collect())
     }
 
+    /// Fetches the content of a section.
     pub fn get_section_content(&self, title: &str) -> Result<Option<String>> {
         // the "Edit" seems to be included in the content... I cannot explain it
         let headr = format!("== {}Edit ==", title);
