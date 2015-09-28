@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["Error","Wikipedia failed to fetch some information"]],"mod":[["http",""],["iter",""]],"struct":[["Page",""],["Wikipedia",""]],"type":[["Result",""]]});

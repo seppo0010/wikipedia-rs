@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="rustdoc">
+    <meta name="description" content="API documentation for the Rust `Wikipedia` struct in crate `wikipedia`.">
+    <meta name="keywords" content="rust, rustlang, rust-lang, Wikipedia">
+
+    <title>wikipedia::Wikipedia - Rust</title>
+
+    <link rel="stylesheet" type="text/css" href="../main.css">
+
+    
+    
+</head>
+<body class="rustdoc">
+    <!--[if lte IE 8]>
+    <div class="warning">
+        This old browser is unsupported and will most likely display funky
+        things.
+    </div>
+    <![endif]-->
+
+    
+
+    <nav class="sidebar">
+        
+        <p class='location'><a href='index.html'>wikipedia</a></p><script>window.sidebarCurrent = {name: 'Wikipedia', ty: 'struct', relpath: ''};</script><script defer src="sidebar-items.js"></script>
+    </nav>
+
+    <nav class="sub">
+        <form class="search-form js-only">
+            <div class="search-container">
+                <input class="search-input" name="search"
+                       autocomplete="off"
+                       placeholder="Click or press ‘S’ to search, ‘?’ for more options…"
+                       type="search">
+            </div>
+        </form>
+    </nav>
+
+    <section id='main' class="content struct">
+<h1 class='fqn'><span class='in-band'>Struct <a href='index.html'>wikipedia</a>::<wbr><a class='struct' href=''>Wikipedia</a></span><span class='out-of-band'><span id='render-detail'>
+            <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">
+                [<span class='inner'>&#x2212;</span>]
+            </a>
+        </span><a id='src-1574' class='srclink' href='../src/wikipedia/lib.rs.html#109-126' title='goto source code'>[src]</a></span></h1>
+<pre class='rust struct'>pub struct Wikipedia&lt;A: <a class='trait' href='../wikipedia/http/trait.HttpClient.html' title='wikipedia::http::HttpClient'>HttpClient</a>&gt; {
+    pub client: A,
+    pub pre_language_url: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>,
+    pub post_language_url: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>,
+    pub language: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>,
+    pub search_results: <a href='https://doc.rust-lang.org/nightly/std/primitive.u32.html'>u32</a>,
+    pub images_results: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>,
+    pub links_results: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>,
+    pub categories_results: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>,
+}</pre><h2 class='fields'>Fields</h2>
+<table><tr class='stab '>
+                                  <td id='structfield.client'><code>client</code></td><td><div class='docblock'><p>HttpClient struct.</p>
+</div></td></tr><tr class='stab '>
+                                  <td id='structfield.pre_language_url'><code>pre_language_url</code></td><td><div class='docblock'><p>Url is created by concatenating <code>pre_language_url</code> + <code>language</code> + <code>post_language_url</code>.</p>
+</div></td></tr><tr class='stab '>
+                                  <td id='structfield.post_language_url'><code>post_language_url</code></td><td></td></tr><tr class='stab '>
+                                  <td id='structfield.language'><code>language</code></td><td></td></tr><tr class='stab '>
+                                  <td id='structfield.search_results'><code>search_results</code></td><td><div class='docblock'><p>Number of results to fetch when searching.</p>
+</div></td></tr><tr class='stab '>
+                                  <td id='structfield.images_results'><code>images_results</code></td><td><div class='docblock'><p>Number of images to fetch in each request when calling <code>get_images</code>.
+The iterator will go through all of them, fetching pages of this size.
+It can be the string &quot;max&quot; to fetch as many as possible on every request.</p>
+</div></td></tr><tr class='stab '>
+                                  <td id='structfield.links_results'><code>links_results</code></td><td><div class='docblock'><p>Like <code>images_results</code>, for links and references.</p>
+</div></td></tr><tr class='stab '>
+                                  <td id='structfield.categories_results'><code>categories_results</code></td><td><div class='docblock'><p>Like <code>images_results</code>, for categories.</p>
+</div></td></tr></table><h2 id='methods'>Methods</h2><h3 class='impl'><code>impl&lt;A: <a class='trait' href='../wikipedia/http/trait.HttpClient.html' title='wikipedia::http::HttpClient'>HttpClient</a>&gt; <a class='struct' href='../wikipedia/struct.Wikipedia.html' title='wikipedia::Wikipedia'>Wikipedia</a>&lt;A&gt;</code></h3><div class='impl-items'><h4 id='method.new' class='method'><code>fn <a href='#method.new' class='fnname'>new</a>(client: A) -&gt; Self</code></h4>
+<div class='docblock'><p>Creates a new object using the provided client and default values.</p>
+</div><h4 id='method.get_languages' class='method'><code>fn <a href='#method.get_languages' class='fnname'>get_languages</a>(&amp;self) -&gt; <a class='type' href='../wikipedia/type.Result.html' title='wikipedia::Result'>Result</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/vec/struct.Vec.html' title='collections::vec::Vec'>Vec</a>&lt;<a href='https://doc.rust-lang.org/nightly/std/primitive.tuple.html'>(<a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>, <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>)</a>&gt;&gt;</code></h4>
+<div class='docblock'><p>Returns a list of languages in the form of (<code>identifier</code>, <code>language</code>),
+for example [(&quot;en&quot;, &quot;English&quot;), (&quot;es&quot;, &quot;Español&quot;)]</p>
+</div><h4 id='method.base_url' class='method'><code>fn <a href='#method.base_url' class='fnname'>base_url</a>(&amp;self) -&gt; <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a></code></h4>
+<div class='docblock'><p>Returns the api url</p>
+</div><h4 id='method.set_base_url' class='method'><code>fn <a href='#method.set_base_url' class='fnname'>set_base_url</a>(&amp;mut self, base_url: &amp;<a href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>)</code></h4>
+<div class='docblock'><p>Updates the url format. The substring <code>{language}</code> will be replaced
+with the selected language.</p>
+</div><h4 id='method.search' class='method'><code>fn <a href='#method.search' class='fnname'>search</a>(&amp;self, query: &amp;<a href='https://doc.rust-lang.org/nightly/std/primitive.str.html'>str</a>) -&gt; <a class='type' href='../wikipedia/type.Result.html' title='wikipedia::Result'>Result</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/vec/struct.Vec.html' title='collections::vec::Vec'>Vec</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>&gt;&gt;</code></h4>
+<div class='docblock'><p>Searches for a string and returns a list of relevant page titles.</p>
+
+<h1 id='examples' class='section-header'><a href='#examples'>Examples</a></h1><pre class='rust rust-example-rendered'>
+<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>wikipedia</span>;
+
+<span class='kw'>let</span> <span class='ident'>wiki</span> <span class='op'>=</span> <span class='ident'>wikipedia</span>::<span class='ident'>Wikipedia</span>::<span class='op'>&lt;</span><span class='ident'>wikipedia</span>::<span class='ident'>http</span>::<span class='ident'>hyper</span>::<span class='ident'>Client</span><span class='op'>&gt;</span>::<span class='ident'>default</span>();
+<span class='kw'>let</span> <span class='ident'>results</span> <span class='op'>=</span> <span class='ident'>wiki</span>.<span class='ident'>search</span>(<span class='string'>&quot;keyboard&quot;</span>).<span class='ident'>unwrap</span>();
+<span class='macro'>assert</span><span class='macro'>!</span>(<span class='ident'>results</span>.<span class='ident'>contains</span>(<span class='kw-2'>&amp;</span><span class='string'>&quot;Computer keyboard&quot;</span>.<span class='ident'>to_owned</span>()));</pre>
+</div><h4 id='method.geosearch' class='method'><code>fn <a href='#method.geosearch' class='fnname'>geosearch</a>(&amp;self, latitude: <a href='https://doc.rust-lang.org/nightly/std/primitive.f64.html'>f64</a>, longitude: <a href='https://doc.rust-lang.org/nightly/std/primitive.f64.html'>f64</a>, radius: <a href='https://doc.rust-lang.org/nightly/std/primitive.u16.html'>u16</a>) -&gt; <a class='type' href='../wikipedia/type.Result.html' title='wikipedia::Result'>Result</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/vec/struct.Vec.html' title='collections::vec::Vec'>Vec</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>&gt;&gt;</code></h4>
+<div class='docblock'><p>Search articles within <code>radius</code> meters of <code>latitude</code> and <code>longitude</code>.</p>
+
+<h1 id='examples' class='section-header'><a href='#examples'>Examples</a></h1><pre class='rust rust-example-rendered'>
+<span class='kw'>extern</span> <span class='kw'>crate</span> <span class='ident'>wikipedia</span>;
+
+<span class='kw'>let</span> <span class='ident'>wiki</span> <span class='op'>=</span> <span class='ident'>wikipedia</span>::<span class='ident'>Wikipedia</span>::<span class='op'>&lt;</span><span class='ident'>wikipedia</span>::<span class='ident'>http</span>::<span class='ident'>hyper</span>::<span class='ident'>Client</span><span class='op'>&gt;</span>::<span class='ident'>default</span>();
+<span class='kw'>let</span> <span class='ident'>results</span> <span class='op'>=</span> <span class='ident'>wiki</span>.<span class='ident'>geosearch</span>(<span class='number'>40.750556</span>,<span class='op'>-</span><span class='number'>73.993611</span>, <span class='number'>20</span>).<span class='ident'>unwrap</span>();
+<span class='macro'>assert</span><span class='macro'>!</span>(<span class='ident'>results</span>.<span class='ident'>contains</span>(<span class='kw-2'>&amp;</span><span class='string'>&quot;Madison Square Garden&quot;</span>.<span class='ident'>to_owned</span>()));</pre>
+</div><h4 id='method.random_count' class='method'><code>fn <a href='#method.random_count' class='fnname'>random_count</a>(&amp;self, count: <a href='https://doc.rust-lang.org/nightly/std/primitive.u8.html'>u8</a>) -&gt; <a class='type' href='../wikipedia/type.Result.html' title='wikipedia::Result'>Result</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/vec/struct.Vec.html' title='collections::vec::Vec'>Vec</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>&gt;&gt;</code></h4>
+<div class='docblock'><p>Fetches <code>count</code> random articles&#39; title.</p>
+</div><h4 id='method.random' class='method'><code>fn <a href='#method.random' class='fnname'>random</a>(&amp;self) -&gt; <a class='type' href='../wikipedia/type.Result.html' title='wikipedia::Result'>Result</a>&lt;<a class='enum' href='https://doc.rust-lang.org/nightly/core/option/enum.Option.html' title='core::option::Option'>Option</a>&lt;<a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>&gt;&gt;</code></h4>
+<div class='docblock'><p>Fetches a random article&#39;s title.</p>
+</div><h4 id='method.page_from_title' class='method'><code>fn <a href='#method.page_from_title' class='fnname'>page_from_title</a>&lt;'a&gt;(&amp;'a self, title: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>) -&gt; <a class='struct' href='../wikipedia/struct.Page.html' title='wikipedia::Page'>Page</a>&lt;'a, A&gt;</code></h4>
+<div class='docblock'><p>Creates a new <code>Page</code> given a <code>title</code>.</p>
+</div><h4 id='method.page_from_pageid' class='method'><code>fn <a href='#method.page_from_pageid' class='fnname'>page_from_pageid</a>&lt;'a&gt;(&amp;'a self, pageid: <a class='struct' href='https://doc.rust-lang.org/nightly/collections/string/struct.String.html' title='collections::string::String'>String</a>) -&gt; <a class='struct' href='../wikipedia/struct.Page.html' title='wikipedia::Page'>Page</a>&lt;'a, A&gt;</code></h4>
+<div class='docblock'><p>Creates a new <code>Page</code> given a <code>pageid</code>.</p>
+</div></div><h2 id='implementations'>Trait Implementations</h2><h3 class='impl'><code>impl&lt;A: <a class='trait' href='../wikipedia/http/trait.HttpClient.html' title='wikipedia::http::HttpClient'>HttpClient</a> + <a class='trait' href='https://doc.rust-lang.org/nightly/core/default/trait.Default.html' title='core::default::Default'>Default</a>&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/default/trait.Default.html' title='core::default::Default'>Default</a> for <a class='struct' href='../wikipedia/struct.Wikipedia.html' title='wikipedia::Wikipedia'>Wikipedia</a>&lt;A&gt;</code></h3><div class='impl-items'><h4 id='method.default' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/core/default/trait.Default.html#method.default' class='fnname'>default</a>() -&gt; Self</code></h4>
+</div><h3 id='derived_implementations'>Derived Implementations </h3><h3 class='impl'><code>impl&lt;A: <a class='trait' href='https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html' title='core::fmt::Debug'>Debug</a> + <a class='trait' href='../wikipedia/http/trait.HttpClient.html' title='wikipedia::http::HttpClient'>HttpClient</a>&gt; <a class='trait' href='https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html' title='core::fmt::Debug'>Debug</a> for <a class='struct' href='../wikipedia/struct.Wikipedia.html' title='wikipedia::Wikipedia'>Wikipedia</a>&lt;A&gt;</code></h3><div class='impl-items'><h4 id='method.fmt' class='method'><code>fn <a href='https://doc.rust-lang.org/nightly/core/fmt/trait.Debug.html#method.fmt' class='fnname'>fmt</a>(&amp;self, __arg_0: &amp;mut <a class='struct' href='https://doc.rust-lang.org/nightly/core/fmt/struct.Formatter.html' title='core::fmt::Formatter'>Formatter</a>) -&gt; <a class='type' href='https://doc.rust-lang.org/nightly/core/fmt/type.Result.html' title='core::fmt::Result'>Result</a></code></h4>
+</div></section>
+    <section id='search' class="content hidden"></section>
+
+    <section class="footer"></section>
+
+    <aside id="help" class="hidden">
+        <div>
+            <h1 class="hidden">Help</h1>
+
+            <div class="shortcuts">
+                <h2>Keyboard Shortcuts</h2>
+
+                <dl>
+                    <dt>?</dt>
+                    <dd>Show this help dialog</dd>
+                    <dt>S</dt>
+                    <dd>Focus the search field</dd>
+                    <dt>&larrb;</dt>
+                    <dd>Move up in search results</dd>
+                    <dt>&rarrb;</dt>
+                    <dd>Move down in search results</dd>
+                    <dt>&#9166;</dt>
+                    <dd>Go to active search result</dd>
+                </dl>
+            </div>
+
+            <div class="infos">
+                <h2>Search Tricks</h2>
+
+                <p>
+                    Prefix searches with a type followed by a colon (e.g.
+                    <code>fn:</code>) to restrict the search to a given type.
+                </p>
+
+                <p>
+                    Accepted types are: <code>fn</code>, <code>mod</code>,
+                    <code>struct</code>, <code>enum</code>,
+                    <code>trait</code>, <code>type</code>, <code>macro</code>,
+                    and <code>const</code>.
+                </p>
+
+                <p>
+                    Search functions by type signature (e.g.
+                    <code>vec -> usize</code>)
+                </p>
+            </div>
+        </div>
+    </aside>
+
+    
+
+    <script>
+        window.rootPath = "../";
+        window.currentCrate = "wikipedia";
+        window.playgroundUrl = "";
+    </script>
+    <script src="../jquery.js"></script>
+    <script src="../main.js"></script>
+    
+    <script async src="../search-index.js"></script>
+</body>
+</html>
