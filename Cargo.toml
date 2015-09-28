@@ -2,6 +2,14 @@
 name = "wikipedia"
 version = "0.1.0"
 authors = ["Sebastian Waisbrot <seppo0010@gmail.com>"]
+license-file = "LICENSE"
+
+description = "Access wikipedia articles from Rust"
+readme = "README.md"
+documentation = "https://seppo0010.github.io/wikipedia-rs/"
+
+repository = "https://github.com/seppo0010/wikipedia-rs/"
+keywords = ["wikipedia", "api"]
 
 [features]
 default = ["http-client"]
