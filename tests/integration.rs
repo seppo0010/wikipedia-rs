@@ -43,7 +43,7 @@ mod tests {
     fn page_content() {
         let wikipedia = w();
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
-        assert!(page.get_content().unwrap().contains("bikeshedding"));
+        assert!(page.get_content().unwrap().contains("bike-shedding"));
     }
 
     #[test]
@@ -52,7 +52,7 @@ mod tests {
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
         assert_eq!(page.get_title().unwrap(), "Parkinson's law of triviality".to_owned());
         let page = wikipedia.page_from_pageid("4138548".to_owned());
-        assert_eq!(page.get_title().unwrap(), "Parkinson's law of triviality".to_owned());
+        assert_eq!(page.get_title().unwrap(), "Law of triviality".to_owned());
     }
 
     #[test]
@@ -71,7 +71,7 @@ mod tests {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         let html = page.get_html_content().unwrap();
-        assert!(html.contains("bikeshedding"));
+        assert!(html.contains("bike-shedding"));
         assert!(html.contains("</div>")); // it would not be html otherwise
     }
 
@@ -81,7 +81,7 @@ mod tests {
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
         let summary = page.get_summary().unwrap();
         let content = page.get_content().unwrap();
-        assert!(summary.contains("bikeshedding"));
+        assert!(summary.contains("bike-shedding"));
         assert!(summary.len() < content.len());
     }
 
@@ -91,7 +91,7 @@ mod tests {
         let page = wikipedia.page_from_title("Bikeshedding".to_owned());
         let summary = page.get_summary().unwrap();
         let content = page.get_content().unwrap();
-        assert!(summary.contains("bikeshedding"));
+        assert!(summary.contains("bike-shedding"));
         assert!(summary.len() < content.len());
     }
 
