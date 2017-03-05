@@ -19,9 +19,9 @@ http-client = ["hyper", "url"]
 serde_json = "0.6.0"
 
 [dependencies.hyper]
-hyper = "0.6.13"
+version = "0.6.13"
 optional = true
 
 [dependencies.url]
-url = "0.2.37"
+version = "0.2.37"
 optional = true
