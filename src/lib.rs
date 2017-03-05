@@ -723,8 +723,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
 
     /// Fetches the content of a section.
     pub fn get_section_content(&self, title: &str) -> Result<Option<String>> {
-        // the "Edit" seems to be included in the content... I cannot explain it
-        let headr = format!("== {}Edit ==", title);
+        let headr = format!("== {} ==", title);
         let content = try!(self.get_content());
         let index = match content.find(&*headr) {
             Some(i) => headr.len() + i,
