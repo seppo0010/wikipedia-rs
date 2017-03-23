@@ -421,6 +421,24 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .map(|x| x.to_owned())
     }
 
+    /// Given a parsed response, usually we access the first page with the data
+    fn get_first_page<'parsed>(&self, data: &'parsed serde_json::Value) -> Option<&'parsed serde_json::Value> {
+        let pages = data
+            .as_object()
+            .and_then(|x| x.get("query"))
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("pages"))
+            .and_then(|x| x.as_object());
+        let pageid = match pages {
+            Some(some_pages) => match some_pages.keys().next() {
+                Some(pageid) => pageid,
+                None => return None,
+            },
+            None => return None,
+        };
+        pages.unwrap().get(pageid)
+    }
+
     /// Gets the markdown content of the article.
     pub fn get_content(&self) -> Result<String> {
         let qp = self.identifier.query_param();
@@ -437,19 +455,9 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         match self.redirect(&q) {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_content(),
             None => (),
-        }
-        let pages = try!(q
-            .as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("pages"))
-            .and_then(|x| x.as_object())
-            .ok_or(Error::JSONPathError));
-        let pageid = match pages.keys().next() {
-            Some(p) => p,
-            None => return Err(Error::JSONPathError),
         };
-        Ok(try!(pages.get(pageid)
+
+        Ok(try!(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
             .and_then(|x| x.as_string())
@@ -475,18 +483,8 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_html_content(),
             None => (),
         }
-        let pages = try!(q
-            .as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("pages"))
-            .and_then(|x| x.as_object())
-            .ok_or(Error::JSONPathError));
-        let pageid = match pages.keys().next() {
-            Some(p) => p,
-            None => return Err(Error::JSONPathError),
-        };
-        Ok(try!(pages.get(pageid)
+
+        Ok(try!(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("revisions"))
             .and_then(|x| x.as_array())
@@ -515,18 +513,8 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_summary(),
             None => (),
         }
-        let pages = try!(q
-            .as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("pages"))
-            .and_then(|x| x.as_object())
-            .ok_or(Error::JSONPathError));
-        let pageid = match pages.keys().next() {
-            Some(p) => p,
-            None => return Err(Error::JSONPathError),
-        };
-        Ok(try!(pages.get(pageid)
+
+        Ok(try!(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
             .and_then(|x| x.as_string())
@@ -668,18 +656,8 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_coordinates(),
             None => (),
         }
-        let pages = try!(q
-            .as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("pages"))
-            .and_then(|x| x.as_object())
-            .ok_or(Error::JSONPathError));
-        let pageid = match pages.keys().next() {
-            Some(p) => p,
-            None => return Err(Error::JSONPathError),
-        };
-        let coord = match pages.get(pageid)
+
+        let coord = match self.get_first_page(&q)
                 .and_then(|x| x.as_object())
                 .and_then(|x| x.get("coordinates"))
                 .and_then(|x| x.as_array())
