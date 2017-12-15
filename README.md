@@ -10,7 +10,7 @@ The crate is called `wikipedia` and you can depend on it via cargo:
 
 ```toml
 [dependencies]
-wikipedia = "0.3.0"
+wikipedia = "0.3.1"
 ```
 
 
