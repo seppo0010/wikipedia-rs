@@ -4,12 +4,12 @@
 //! ```
 //! extern crate wikipedia;
 //!
-//! let wiki = wikipedia::Wikipedia::<wikipedia::http::hyper::Client>::default();
+//! let wiki = wikipedia::Wikipedia::<wikipedia::http::default::Client>::default();
 //! let page = wiki.page_from_title("Club Atletico River Plate".to_owned());
 //! let content = page.get_content().unwrap();
 //! assert!(content.contains("B Nacional"));
 //! ```
-#[cfg(feature="http-client")] extern crate hyper;
+#[cfg(feature="http-client")] extern crate reqwest;
 #[cfg(feature="http-client")] extern crate url;
 extern crate serde_json;
 
@@ -36,7 +36,7 @@ macro_rules! results {
             ).into_iter().filter_map(|i|
                 i.as_object()
                 .and_then(|i| i.get("title"))
-                .and_then(|s| s.as_string().map(|s| s.to_owned()))
+                .and_then(|s| s.as_str().map(|s| s.to_owned()))
                 ).collect()
     }
 }
@@ -170,14 +170,14 @@ impl<A: http::HttpClient> Wikipedia<A> {
                         Some((
                             match o
                                 .and_then(|x| x.get("code"))
-                                .and_then(|x| x.as_string())
+                                .and_then(|x| x.as_str())
                                 .map(|x| x.to_owned()) {
                                     Some(v) => v,
                                     None => return None,
                                 },
                             match o
                                 .and_then(|x| x.get("*"))
-                                .and_then(|x| x.as_string())
+                                .and_then(|x| x.as_str())
                                 .map(|x| x.to_owned()) {
                                     Some(v) => v,
                                     None => return None,
@@ -221,7 +221,7 @@ impl<A: http::HttpClient> Wikipedia<A> {
     /// ```
     /// extern crate wikipedia;
     ///
-    /// let wiki = wikipedia::Wikipedia::<wikipedia::http::hyper::Client>::default();
+    /// let wiki = wikipedia::Wikipedia::<wikipedia::http::default::Client>::default();
     /// let results = wiki.search("keyboard").unwrap();
     /// assert!(results.contains(&"Computer keyboard".to_owned()));
     /// ```
@@ -246,7 +246,7 @@ impl<A: http::HttpClient> Wikipedia<A> {
     /// ```
     /// extern crate wikipedia;
     ///
-    /// let wiki = wikipedia::Wikipedia::<wikipedia::http::hyper::Client>::default();
+    /// let wiki = wikipedia::Wikipedia::<wikipedia::http::default::Client>::default();
     /// let results = wiki.geosearch(40.750556,-73.993611, 20).unwrap();
     /// assert!(results.contains(&"Madison Square Garden".to_owned()));
     /// ```
@@ -399,7 +399,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                 };
                 Ok(try!(page.as_object()
                     .and_then(|x| x.get("title"))
-                    .and_then(|x| x.as_string())
+                    .and_then(|x| x.as_str())
                     .ok_or(Error::JSONPathError))
                     .to_owned())
             },
@@ -417,7 +417,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .and_then(|x| x.into_iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("to"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .map(|x| x.to_owned())
     }
 
@@ -460,7 +460,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Ok(try!(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .ok_or(Error::JSONPathError))
             .to_owned())
     }
@@ -491,7 +491,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .and_then(|x| x.into_iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("*"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .ok_or(Error::JSONPathError))
             .to_owned())
     }
@@ -517,7 +517,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Ok(try!(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .ok_or(Error::JSONPathError))
             .to_owned())
     }
@@ -537,9 +537,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             let value = match *v {
                 serde_json::Value::Null => "".to_owned(),
                 serde_json::Value::Bool(b) => if b { "1" } else { "0" }.to_owned(),
-                serde_json::Value::I64(i) => format!("{}", i),
-                serde_json::Value::U64(u) => format!("{}", u),
-                serde_json::Value::F64(f) => format!("{}", f),
+                serde_json::Value::Number(ref f) => format!("{}", f),
                 serde_json::Value::String(ref s) => s.clone(),
                 _ => return Err(Error::JSONPathError),
             };
@@ -693,7 +691,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .into_iter()
             .filter_map(|x| x.as_object()
                     .and_then(|x| x.get("line"))
-                    .and_then(|x| x.as_string())
+                    .and_then(|x| x.as_str())
                     .map(|x| x.to_owned())
                     )
             .collect())
