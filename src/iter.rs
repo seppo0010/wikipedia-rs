@@ -76,7 +76,7 @@ impl IterItem for Image {
 
         let title = obj
             .get("title")
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .unwrap_or("").to_owned();
         let url = obj
             .get("imageinfo")
@@ -84,7 +84,7 @@ impl IterItem for Image {
             .and_then(|x| x.into_iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("url"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .unwrap_or("").to_owned();
         let description_url = obj
             .get("imageinfo")
@@ -92,7 +92,7 @@ impl IterItem for Image {
             .and_then(|x| x.into_iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("descriptionurl"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .unwrap_or("").to_owned();
 
         Some(Image {
@@ -118,7 +118,7 @@ impl IterItem for Reference {
         value
             .as_object()
             .and_then(|x| x.get("*"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .map(|s| Reference {
                 url: if s.starts_with("http:") {
                     s.to_owned()
@@ -144,7 +144,7 @@ impl IterItem for Link {
         value
             .as_object()
             .and_then(|x| x.get("title"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .map(|s| Link { title: s.to_owned() })
     }
 }
@@ -164,7 +164,7 @@ impl IterItem for Category {
         value
             .as_object()
             .and_then(|x| x.get("title"))
-            .and_then(|x| x.as_string())
+            .and_then(|x| x.as_str())
             .map(|s| Category {
                 title: if s.starts_with("Category: ") {
                     s[10..].to_owned()

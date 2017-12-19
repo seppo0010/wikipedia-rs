@@ -1,4 +1,3 @@
-#[cfg(feature="http-client")] extern crate hyper;
 extern crate wikipedia;
 
 #[cfg(feature = "http-client")]
@@ -7,7 +6,7 @@ mod tests {
     use wikipedia::http;
     use std::collections::HashSet;
 
-    fn w() -> Wikipedia<http::hyper::Client> {
+    fn w() -> Wikipedia<http::default::Client> {
         Wikipedia::default()
     }
 

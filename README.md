@@ -10,7 +10,7 @@ The crate is called `wikipedia` and you can depend on it via cargo:
 
 ```toml
 [dependencies]
-wikipedia = "0.2.0"
+wikipedia = "0.3.0"
 ```
 
 
@@ -19,7 +19,7 @@ wikipedia = "0.2.0"
 ```rust
 extern crate wikipedia;
 
-let wiki = wikipedia::Wikipedia::<wikipedia::http::hyper::Client>::default();
+let wiki = wikipedia::Wikipedia::<wikipedia::http::default::Client>::default();
 let page = wiki.page_from_title("Club Atletico River Plate".to_owned());
 let content = page.get_content().unwrap();
 assert!(content.contains("B Nacional"));

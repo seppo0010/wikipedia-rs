@@ -1,19 +1,19 @@
 #[derive(Debug)]
 pub struct Error;
 
-pub trait HttpClient: Default {
+pub trait HttpClient {
     fn user_agent(&mut self, user_agent: String);
     fn get<'a, I>(&self, base_url: &str, args: I) -> Result<String, Error>
         where I: Iterator<Item=(&'a str, &'a str)>;
 }
 
 #[cfg(feature="http-client")]
-pub mod hyper {
+pub mod default {
     use std::convert;
     use std::io;
     use std::io::Read;
 
-    use hyper;
+    use reqwest;
     use url;
 
     use super::{Error, HttpClient};
@@ -35,25 +35,24 @@ pub mod hyper {
 
         fn get<'a, I>(&self, base_url: &str, args: I) -> Result<String, Error>
                 where I: Iterator<Item=(&'a str, &'a str)> {
-            let mut url = try!(hyper::Url::parse(base_url));
-            url.set_query_from_pairs(args);
-            let client = hyper::Client::new();
-            let mut response = try!(client.get(url)
-                .header(hyper::header::UserAgent(self.user_agent.clone()))
-                .send());
+            let url = reqwest::Url::parse_with_params(base_url, args)?;
+            let client = reqwest::Client::new();
+            let mut response = client.get(url)
+                .header(reqwest::header::UserAgent::new(self.user_agent.clone()))
+                .send()?;
 
-            if !response.status.is_success() {
+            if !response.status().is_success() {
                 return Err(Error);
             }
 
             let mut response_str = String::new();
-            try!(response.read_to_string(&mut response_str));
+            response.read_to_string(&mut response_str)?;
             Ok(response_str)
         }
     }
 
-    impl convert::From<hyper::error::Error> for Error {
-        fn from(_: hyper::error::Error) -> Self {
+    impl convert::From<reqwest::Error> for Error {
+        fn from(_: reqwest::Error) -> Self {
             Error
         }
     }
