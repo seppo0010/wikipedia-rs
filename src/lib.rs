@@ -12,6 +12,7 @@
 #[cfg(feature="http-client")] extern crate reqwest;
 #[cfg(feature="http-client")] extern crate url;
 extern crate serde_json;
+#[macro_use] extern crate failure;
 
 use std::cmp::PartialEq;
 use std::io;
@@ -71,36 +72,23 @@ macro_rules! cont {
 }
 
 /// Wikipedia failed to fetch some information
-#[derive(Debug)]
+#[derive(Fail, Debug)]
 pub enum Error {
     /// Some error communicating with the server
+    #[fail(display = "HTTP Error")]
     HTTPError,
     /// Error reading response
-    IOError(io::Error),
+    #[fail(display = "IO Error: {}", _0)]
+    IOError(#[cause] io::Error),
     /// Failed to parse JSON response
-    JSONError(serde_json::error::Error),
+    #[fail(display = "JSON Error: {}", _0)]
+    JSONError(#[cause] serde_json::error::Error),
     /// Missing required keys in the JSON response
+    #[fail(display = "JSON Path Error")]
     JSONPathError,
     /// One of the parameters provided (identified by `String`) is invalid
+    #[fail(display = "Invalid Parameter: {}", _0)]
     InvalidParameter(String),
-}
-
-impl std::convert::From<http::Error> for Error {
-    fn from(_: http::Error) -> Self {
-        Error::HTTPError
-    }
-}
-
-impl std::convert::From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::IOError(e)
-    }
-}
-
-impl std::convert::From<serde_json::error::Error> for Error {
-    fn from(e: serde_json::error::Error) -> Self {
-        Error::JSONError(e)
-    }
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -210,8 +198,9 @@ impl<A: http::HttpClient> Wikipedia<A> {
 
     fn query<'a, I>(&self, args: I) -> Result<serde_json::Value>
             where I: Iterator<Item=(&'a str, &'a str)> {
-        let response_str = try!(self.client.get(&*self.base_url(), args));
-        Ok(try!(serde_json::from_str(&*response_str)))
+        let response_str = self.client.get(&*self.base_url(), args).map_err(|_| Error::HTTPError)?;
+        let json = serde_json::from_str(&*response_str).map_err(Error::JSONError)?;
+        Ok(json)
     }
 
     /// Searches for a string and returns a list of relevant page titles.
