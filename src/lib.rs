@@ -626,6 +626,32 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Iter::new(&self)
     }
 
+    fn request_langlinks(&self, cont: &Option<Vec<(String, String)>>) ->
+            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
+        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+            ("prop", "langlinks"),
+            ("lllimit", &*self.wikipedia.links_results)
+        );
+        a.map(|(pages, cont)| {
+            let page = match pages.into_iter().next() {
+                Some(p) => p,
+                None => return (Vec::new(), None),
+            };
+            (page
+                .as_object()
+                .and_then(|x| x.get("langlinks"))
+                .and_then(|x| x.as_array())
+                .map(|x| x.into_iter().cloned().collect())
+                .unwrap_or(Vec::new()), cont)
+        })
+    }
+
+    /// Creates an iterator to view all langlinks of the `Page`.
+    /// This iterates over the page titles in all available languages.
+    pub fn get_langlinks(&self) -> Result<Iter<A, iter::LangLink>> {
+        Iter::new(&self)
+    }
+
     /// Returns the latitude and longitude associated to the `Page` if any.
     pub fn get_coordinates(&self) -> Result<Option<(f64, f64)>> {
         let qp = self.identifier.query_param();

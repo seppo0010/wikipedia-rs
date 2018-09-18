@@ -169,6 +169,32 @@ mod tests {
     }
 
     #[test]
+    fn langlinks() {
+        let mut wikipedia = w();
+        wikipedia.links_results = "3".to_owned();
+        let page = wikipedia.page_from_title("Law of triviality".to_owned());
+        let langlinks = page.get_langlinks().unwrap().collect::<Vec<_>>();
+        assert_eq!(
+            langlinks
+                .iter()
+                .filter(|ll| ll.lang == "nl".to_owned())
+                .next()
+                .unwrap()
+                .title,
+            Some("Trivialiteitswet van Parkinson".into()),
+        );
+        assert_eq!(
+            langlinks
+                .iter()
+                .filter(|ll| ll.lang == "fr".to_owned())
+                .next()
+                .unwrap()
+                .title,
+            Some("Loi de futilité de Parkinson".into()),
+        );
+    }
+
+    #[test]
     fn categories() {
         let mut wikipedia = w();
         wikipedia.categories_results = "3".to_owned();

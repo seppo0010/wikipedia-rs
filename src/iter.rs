@@ -150,6 +150,31 @@ impl IterItem for Link {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct LangLink {
+    /// The language ID
+    pub lang: String,
+
+    /// The page title in this language, may be `None` if undefined
+    pub title: Option<String>,
+}
+
+impl IterItem for LangLink {
+    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
+            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+        page.request_langlinks(&cont)
+    }
+
+    fn from_value(value: &Value) -> Option<LangLink> {
+        value
+            .as_object()
+            .map(|l| LangLink {
+                lang: l.get("lang").unwrap().as_str().unwrap().into(),
+                title: l.get("*").and_then(|n| n.as_str()).map(|n| n.into()),
+            })
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Category {
     pub title: String,
 }
