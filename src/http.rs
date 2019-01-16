@@ -34,7 +34,7 @@ pub mod default {
             let url = reqwest::Url::parse_with_params(base_url, args)?;
             let client = reqwest::Client::new();
             let mut response = client.get(url)
-                .header(reqwest::header::UserAgent::new(self.user_agent.clone()))
+                .header(reqwest::header::USER_AGENT, self.user_agent.clone())
                 .send()?;
 
             ensure!(response.status().is_success(), err_msg("Bad status"));
