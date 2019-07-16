@@ -2,9 +2,9 @@ extern crate wikipedia;
 
 #[cfg(feature = "http-client")]
 mod tests {
-    use wikipedia::Wikipedia;
-    use wikipedia::http;
     use std::collections::HashSet;
+    use wikipedia::http;
+    use wikipedia::Wikipedia;
 
     fn w() -> Wikipedia<http::default::Client> {
         Wikipedia::default()
@@ -49,7 +49,10 @@ mod tests {
     fn title() {
         let wikipedia = w();
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
-        assert_eq!(page.get_title().unwrap(), "Parkinson's law of triviality".to_owned());
+        assert_eq!(
+            page.get_title().unwrap(),
+            "Parkinson's law of triviality".to_owned()
+        );
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         assert_eq!(page.get_title().unwrap(), "Law of triviality".to_owned());
     }
@@ -217,8 +220,8 @@ mod tests {
         let wikipedia = w();
         let page = wikipedia.page_from_title("Bikeshedding".to_owned());
         assert_eq!(
-                page.get_sections().unwrap(),
-                vec![
+            page.get_sections().unwrap(),
+            vec![
                 "Argument".to_owned(),
                 "Examples".to_owned(),
                 "Related principles and formulations".to_owned(),
@@ -226,8 +229,8 @@ mod tests {
                 "References".to_owned(),
                 "Further reading".to_owned(),
                 "External links".to_owned(),
-                ]
-                )
+            ]
+        )
     }
 
     #[test]
@@ -235,8 +238,8 @@ mod tests {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         assert_eq!(
-                page.get_sections().unwrap(),
-                vec![
+            page.get_sections().unwrap(),
+            vec![
                 "Argument".to_owned(),
                 "Examples".to_owned(),
                 "Related principles and formulations".to_owned(),
@@ -244,16 +247,19 @@ mod tests {
                 "References".to_owned(),
                 "Further reading".to_owned(),
                 "External links".to_owned(),
-                ]
-                )
+            ]
+        )
     }
 
     #[test]
     fn section_content() {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
-        assert!(page.get_section_content("Examples").unwrap().unwrap()
-                .contains("finance committee meeting"))
+        assert!(page
+            .get_section_content("Examples")
+            .unwrap()
+            .unwrap()
+            .contains("finance committee meeting"))
     }
 
     #[test]
