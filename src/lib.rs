@@ -9,67 +9,31 @@
 //! let content = page.get_content().unwrap();
 //! assert!(content.contains("B Nacional"));
 //! ```
-#[cfg(feature="http-client")] extern crate reqwest;
-#[cfg(feature="http-client")] extern crate url;
+#[cfg(feature = "async")]
+extern crate futures;
+#[cfg(feature = "http-client")]
+extern crate reqwest;
 extern crate serde_json;
-#[macro_use] extern crate failure;
+#[cfg(feature = "http-client")]
+extern crate url;
+#[macro_use]
+extern crate failure;
 
 use std::cmp::PartialEq;
 use std::io;
 use std::result;
 
-pub mod iter;
 pub mod http;
+pub mod iter;
+#[macro_use]
+mod macros;
 pub use iter::Iter;
+#[cfg(feature = "async")]
+pub mod r#async;
 
-const LANGUAGE_URL_MARKER:&'static str = "{language}";
+pub(crate) const LANGUAGE_URL_MARKER: &str = "{language}";
 
-macro_rules! results {
-    ($data: expr, $query_field: expr) => {
-        // There has to be a better way to write the following code
-        try!(
-            $data.as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get($query_field))
-            .and_then(|x| x.as_array())
-            .ok_or(Error::JSONPathError)
-            ).into_iter().filter_map(|i|
-                i.as_object()
-                .and_then(|i| i.get("title"))
-                .and_then(|s| s.as_str().map(|s| s.to_owned()))
-                ).collect()
-    }
-}
-
-macro_rules! cont {
-    ($this: expr, $cont: expr, $($params: expr),*) => {{
-        let qp = $this.identifier.query_param();
-        let mut params = vec![
-            $($params),*,
-            ("format", "json"),
-            ("action", "query"),
-            (&*qp.0, &*qp.1),
-        ];
-        match *$cont {
-            Some(ref v) => {
-                for x in v.iter() { params.push((&*x.0, &*x.1)); }
-            },
-            None => params.push(("continue", "")),
-        }
-        let q = try!($this.wikipedia.query(params.into_iter()));
-
-        let pages = try!(q
-            .as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get("pages"))
-            .and_then(|x| x.as_object())
-            .ok_or(Error::JSONPathError));
-
-        Ok((pages.values().cloned().collect(), try!($this.parse_cont(&q))))
-    }}
-}
+pub type WikiResponse = (Vec<serde_json::Value>, Option<Vec<(String, String)>>);
 
 /// Wikipedia failed to fetch some information
 #[derive(Fail, Debug)]
@@ -77,6 +41,9 @@ pub enum Error {
     /// Some error communicating with the server
     #[fail(display = "HTTP Error")]
     HTTPError,
+    /// Bad HTTP status
+    #[fail(display = "Bad status")]
+    BadStatus,
     /// Error reading response
     #[fail(display = "IO Error: {}", _0)]
     IOError(#[cause] io::Error),
@@ -89,6 +56,32 @@ pub enum Error {
     /// One of the parameters provided (identified by `String`) is invalid
     #[fail(display = "Invalid Parameter: {}", _0)]
     InvalidParameter(String),
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Self {
+        Error::JSONError(err)
+    }
+}
+
+#[cfg(feature = "http-client")]
+impl From<reqwest::Error> for Error {
+    fn from(_err: reqwest::Error) -> Self {
+        Error::HTTPError
+    }
+}
+
+#[cfg(feature = "http-client")]
+impl From<reqwest::UrlError> for Error {
+    fn from(_err: reqwest::UrlError) -> Self {
+        Error::HTTPError
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Self {
+        Error::IOError(err)
+    }
 }
 
 pub type Result<T> = result::Result<T, Error>;
@@ -124,7 +117,7 @@ impl<A: http::HttpClient> Wikipedia<A> {
     pub fn new(mut client: A) -> Self {
         client.user_agent("wikipedia (https://github.com/seppo0010/wikipedia-rs)".to_owned());
         Wikipedia {
-            client: client,
+            client,
             pre_language_url: "https://".to_owned(),
             post_language_url: ".wikipedia.org/w/api.php".to_owned(),
             language: "en".to_owned(),
@@ -138,12 +131,15 @@ impl<A: http::HttpClient> Wikipedia<A> {
     /// Returns a list of languages in the form of (`identifier`, `language`),
     /// for example [("en", "English"), ("es", "Español")]
     pub fn get_languages(&self) -> Result<Vec<(String, String)>> {
-        let q = try!(self.query(vec![
+        let q = try!(self.query(
+            vec![
                 ("meta", "siteinfo"),
                 ("siprop", "languages"),
                 ("format", "json"),
                 ("action", "query"),
-            ].into_iter()));
+            ]
+            .into_iter()
+        ));
 
         Ok(try!(q
             .as_object()
@@ -152,32 +148,37 @@ impl<A: http::HttpClient> Wikipedia<A> {
             .and_then(|x| x.get("languages"))
             .and_then(|x| x.as_array())
             .ok_or(Error::JSONPathError))
-            .into_iter()
-            .filter_map(|x| {
-                        let o = x.as_object();
-                        Some((
-                            match o
-                                .and_then(|x| x.get("code"))
-                                .and_then(|x| x.as_str())
-                                .map(|x| x.to_owned()) {
-                                    Some(v) => v,
-                                    None => return None,
-                                },
-                            match o
-                                .and_then(|x| x.get("*"))
-                                .and_then(|x| x.as_str())
-                                .map(|x| x.to_owned()) {
-                                    Some(v) => v,
-                                    None => return None,
-                                },
-                        ))
-                    })
-            .collect())
+        .iter()
+        .filter_map(|x| {
+            let o = x.as_object();
+            Some((
+                match o
+                    .and_then(|x| x.get("code"))
+                    .and_then(|x| x.as_str())
+                    .map(|x| x.to_owned())
+                {
+                    Some(v) => v,
+                    None => return None,
+                },
+                match o
+                    .and_then(|x| x.get("*"))
+                    .and_then(|x| x.as_str())
+                    .map(|x| x.to_owned())
+                {
+                    Some(v) => v,
+                    None => return None,
+                },
+            ))
+        })
+        .collect())
     }
 
     /// Returns the api url
     pub fn base_url(&self) -> String {
-        format!("{}{}{}", self.pre_language_url, self.language, self.post_language_url)
+        format!(
+            "{}{}{}",
+            self.pre_language_url, self.language, self.post_language_url
+        )
     }
 
     /// Updates the url format. The substring `{language}` will be replaced
@@ -193,12 +194,17 @@ impl<A: http::HttpClient> Wikipedia<A> {
             }
         };
         self.pre_language_url = base_url[0..index].to_owned();
-        self.post_language_url = base_url[index+LANGUAGE_URL_MARKER.len()..].to_owned();
+        self.post_language_url = base_url[index + LANGUAGE_URL_MARKER.len()..].to_owned();
     }
 
     fn query<'a, I>(&self, args: I) -> Result<serde_json::Value>
-            where I: Iterator<Item=(&'a str, &'a str)> {
-        let response_str = self.client.get(&*self.base_url(), args).map_err(|_| Error::HTTPError)?;
+    where
+        I: Iterator<Item = (&'a str, &'a str)>,
+    {
+        let response_str = self
+            .client
+            .get(&*self.base_url(), args)
+            .map_err(|_| Error::HTTPError)?;
         let json = serde_json::from_str(&*response_str).map_err(Error::JSONError)?;
         Ok(json)
     }
@@ -216,14 +222,17 @@ impl<A: http::HttpClient> Wikipedia<A> {
     /// ```
     pub fn search(&self, query: &str) -> Result<Vec<String>> {
         let results = &*format!("{}", self.search_results);
-        let data = try!(self.query(vec![
+        let data = try!(self.query(
+            vec![
                 ("list", "search"),
                 ("srprop", ""),
                 ("srlimit", results),
                 ("srsearch", query),
                 ("format", "json"),
                 ("action", "query"),
-            ].into_iter()));
+            ]
+            .into_iter()
+        ));
 
         Ok(results!(data, "search"))
     }
@@ -241,36 +250,42 @@ impl<A: http::HttpClient> Wikipedia<A> {
     /// ```
     pub fn geosearch(&self, latitude: f64, longitude: f64, radius: u16) -> Result<Vec<String>> {
         if latitude < -90.0 || latitude > 90.0 {
-            return Err(Error::InvalidParameter("latitude".to_string()))
+            return Err(Error::InvalidParameter("latitude".to_string()));
         }
         if longitude < -180.0 || longitude > 180.0 {
-            return Err(Error::InvalidParameter("longitude".to_string()))
+            return Err(Error::InvalidParameter("longitude".to_string()));
         }
         if radius < 10 || radius > 10000 {
-            return Err(Error::InvalidParameter("radius".to_string()))
+            return Err(Error::InvalidParameter("radius".to_string()));
         }
         let results = &*format!("{}", self.search_results);
-        let data = try!(self.query(vec![
+        let data = try!(self.query(
+            vec![
                 ("list", "geosearch"),
                 ("gsradius", &*format!("{}", radius)),
                 ("gscoord", &*format!("{}|{}", latitude, longitude)),
                 ("gslimit", results),
                 ("format", "json"),
                 ("action", "query"),
-                ].into_iter()));
+            ]
+            .into_iter()
+        ));
         Ok(results!(data, "geosearch"))
     }
 
     /// Fetches `count` random articles' title.
     pub fn random_count(&self, count: u8) -> Result<Vec<String>> {
-        let data = try!(self.query(vec![
+        let data = try!(self.query(
+            vec![
                 ("list", "random"),
                 ("rnnamespace", "0"),
                 ("rnlimit", &*format!("{}", count)),
                 ("format", "json"),
                 ("action", "query"),
-                ].into_iter()));
-        let r:Vec<String> = results!(data, "random");
+            ]
+            .into_iter()
+        ));
+        let r: Vec<String> = results!(data, "random");
         Ok(r)
     }
 
@@ -280,12 +295,12 @@ impl<A: http::HttpClient> Wikipedia<A> {
     }
 
     /// Creates a new `Page` given a `title`.
-    pub fn page_from_title<'a>(&'a self, title: String) -> Page<'a, A> {
+    pub fn page_from_title(&self, title: String) -> Page<A> {
         Page::from_title(self, title)
     }
 
     /// Creates a new `Page` given a `pageid`.
-    pub fn page_from_pageid<'a>(&'a self, pageid: String) -> Page<'a, A> {
+    pub fn page_from_pageid(&self, pageid: String) -> Page<A> {
         Page::from_pageid(self, pageid)
     }
 }
@@ -315,12 +330,18 @@ pub struct Page<'a, A: 'a + http::HttpClient> {
 impl<'a, A: http::HttpClient> Page<'a, A> {
     /// Creates a new `Page` given a `title`.
     pub fn from_title(wikipedia: &'a Wikipedia<A>, title: String) -> Page<A> {
-        Page { wikipedia: wikipedia, identifier: TitlePageId::Title(title) }
+        Page {
+            wikipedia,
+            identifier: TitlePageId::Title(title),
+        }
     }
 
     /// Creates a new `Page` given a `pageid`.
     pub fn from_pageid(wikipedia: &'a Wikipedia<A>, pageid: String) -> Page<A> {
-        Page { wikipedia: wikipedia, identifier: TitlePageId::PageId(pageid) }
+        Page {
+            wikipedia,
+            identifier: TitlePageId::PageId(pageid),
+        }
     }
 
     /// Gets the `Page`'s `pageid`.
@@ -329,19 +350,21 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             TitlePageId::PageId(ref s) => Ok(s.clone()),
             TitlePageId::Title(_) => {
                 let qp = self.identifier.query_param();
-                let q = try!(self.wikipedia.query(vec![
-                    ("prop", "info|pageprops"),
-                    ("inprop", "url"),
-                    ("ppprop", "disambiguation"),
-                    ("redirects", ""),
-                    ("format", "json"),
-                    ("action", "query"),
-                    (&*qp.0, &*qp.1),
-                ].into_iter()));
+                let q = try!(self.wikipedia.query(
+                    vec![
+                        ("prop", "info|pageprops"),
+                        ("inprop", "url"),
+                        ("ppprop", "disambiguation"),
+                        ("redirects", ""),
+                        ("format", "json"),
+                        ("action", "query"),
+                        (&*qp.0, &*qp.1),
+                    ]
+                    .into_iter()
+                ));
 
-                match self.redirect(&q) {
-                    Some(r) => return Page::from_title(&self.wikipedia, r).get_pageid(),
-                    None => (),
+                if let Some(r) = self.redirect(&q) {
+                    return Page::from_title(&self.wikipedia, r).get_pageid();
                 }
                 let pages = try!(q
                     .as_object()
@@ -361,19 +384,21 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             TitlePageId::Title(ref s) => Ok(s.clone()),
             TitlePageId::PageId(_) => {
                 let qp = self.identifier.query_param();
-                let q = try!(self.wikipedia.query(vec![
-                    ("prop", "info|pageprops"),
-                    ("inprop", "url"),
-                    ("ppprop", "disambiguation"),
-                    ("redirects", ""),
-                    ("format", "json"),
-                    ("action", "query"),
-                    (&*qp.0, &*qp.1),
-                ].into_iter()));
+                let q = try!(self.wikipedia.query(
+                    vec![
+                        ("prop", "info|pageprops"),
+                        ("inprop", "url"),
+                        ("ppprop", "disambiguation"),
+                        ("redirects", ""),
+                        ("format", "json"),
+                        ("action", "query"),
+                        (&*qp.0, &*qp.1),
+                    ]
+                    .into_iter()
+                ));
 
-                match self.redirect(&q) {
-                    Some(r) => return Ok(r),
-                    None => (),
+                if let Some(r) = self.redirect(&q) {
+                    return Ok(r);
                 }
                 let pages = try!(q
                     .as_object()
@@ -386,12 +411,13 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                     Some(p) => p,
                     None => return Err(Error::JSONPathError),
                 };
-                Ok(try!(page.as_object()
+                Ok(try!(page
+                    .as_object()
                     .and_then(|x| x.get("title"))
                     .and_then(|x| x.as_str())
                     .ok_or(Error::JSONPathError))
-                    .to_owned())
-            },
+                .to_owned())
+            }
         }
     }
 
@@ -403,7 +429,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("redirects"))
             .and_then(|x| x.as_array())
-            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("to"))
             .and_then(|x| x.as_str())
@@ -411,7 +437,10 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
     }
 
     /// Given a parsed response, usually we access the first page with the data
-    fn get_first_page<'parsed>(&self, data: &'parsed serde_json::Value) -> Option<&'parsed serde_json::Value> {
+    fn get_first_page<'parsed>(
+        &self,
+        data: &'parsed serde_json::Value,
+    ) -> Option<&'parsed serde_json::Value> {
         let pages = data
             .as_object()
             .and_then(|x| x.get("query"))
@@ -431,84 +460,93 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
     /// Gets the markdown content of the article.
     pub fn get_content(&self) -> Result<String> {
         let qp = self.identifier.query_param();
-        let q = try!(self.wikipedia.query(vec![
-            ("prop", "extracts|revisions"),
-            ("explaintext", ""),
-            ("rvprop", "ids"),
-            ("redirects", ""),
-            ("format", "json"),
-            ("action", "query"),
-            (&*qp.0, &*qp.1),
-        ].into_iter()));
+        let q = try!(self.wikipedia.query(
+            vec![
+                ("prop", "extracts|revisions"),
+                ("explaintext", ""),
+                ("rvprop", "ids"),
+                ("redirects", ""),
+                ("format", "json"),
+                ("action", "query"),
+                (&*qp.0, &*qp.1),
+            ]
+            .into_iter()
+        ));
 
-        match self.redirect(&q) {
-            Some(r) => return Page::from_title(&self.wikipedia, r).get_content(),
-            None => (),
+        if let Some(r) = self.redirect(&q) {
+            return Page::from_title(&self.wikipedia, r).get_content();
         };
 
-        Ok(try!(self.get_first_page(&q)
+        Ok(try!(self
+            .get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
             .and_then(|x| x.as_str())
             .ok_or(Error::JSONPathError))
-            .to_owned())
+        .to_owned())
     }
 
     /// Gets the html content of the article.
     pub fn get_html_content(&self) -> Result<String> {
         let qp = self.identifier.query_param();
-        let q = try!(self.wikipedia.query(vec![
-            ("prop", "revisions"),
-            ("rvprop", "content"),
-            ("rvlimit", "1"),
-            ("rvparse", ""),
-            ("redirects", ""),
-            ("format", "json"),
-            ("action", "query"),
-            (&*qp.0, &*qp.1),
-        ].into_iter()));
+        let q = try!(self.wikipedia.query(
+            vec![
+                ("prop", "revisions"),
+                ("rvprop", "content"),
+                ("rvlimit", "1"),
+                ("rvparse", ""),
+                ("redirects", ""),
+                ("format", "json"),
+                ("action", "query"),
+                (&*qp.0, &*qp.1),
+            ]
+            .into_iter()
+        ));
 
-        match self.redirect(&q) {
-            Some(r) => return Page::from_title(&self.wikipedia, r).get_html_content(),
-            None => (),
+        if let Some(r) = self.redirect(&q) {
+            return Page::from_title(&self.wikipedia, r).get_html_content();
         }
 
-        Ok(try!(self.get_first_page(&q)
+        Ok(try!(self
+            .get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("revisions"))
             .and_then(|x| x.as_array())
-            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("*"))
             .and_then(|x| x.as_str())
             .ok_or(Error::JSONPathError))
-            .to_owned())
+        .to_owned())
     }
 
     /// Gets a summary of the article.
     pub fn get_summary(&self) -> Result<String> {
         let qp = self.identifier.query_param();
-        let q = try!(self.wikipedia.query(vec![
-            ("prop", "extracts"),
-            ("explaintext", ""),
-            ("exintro", ""),
-            ("redirects", ""),
-            ("format", "json"),
-            ("action", "query"),
-            (&*qp.0, &*qp.1),
-        ].into_iter()));
+        let q = try!(self.wikipedia.query(
+            vec![
+                ("prop", "extracts"),
+                ("explaintext", ""),
+                ("exintro", ""),
+                ("redirects", ""),
+                ("format", "json"),
+                ("action", "query"),
+                (&*qp.0, &*qp.1),
+            ]
+            .into_iter()
+        ));
 
-        match self.redirect(&q) {
-            Some(r) => return Page::from_title(&self.wikipedia, r).get_summary(),
-            None => (),
+        if let Some(r) = self.redirect(&q) {
+            return Page::from_title(&self.wikipedia, r).get_summary();
         }
 
-        Ok(try!(self.get_first_page(&q)
+        Ok(try!(self
+            .get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
             .and_then(|x| x.as_str())
             .ok_or(Error::JSONPathError))
-            .to_owned())
+        .to_owned())
     }
 
     /// Receive a json object and extracts any `continue` parameters to be
@@ -517,7 +555,8 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         let cont = match q
             .as_object()
             .and_then(|x| x.get("continue"))
-            .and_then(|x| x.as_object()) {
+            .and_then(|x| x.as_object())
+        {
             Some(v) => v,
             None => return Ok(None),
         };
@@ -535,9 +574,10 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Ok(Some(cont_v))
     }
 
-    fn request_images(&self, cont: &Option<Vec<(String, String)>>) ->
-            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
-        cont!(self, cont,
+    fn request_images(&self, cont: &Option<Vec<(String, String)>>) -> Result<WikiResponse> {
+        cont!(
+            self,
+            cont,
             ("generator", "images"),
             ("gimlimit", &*self.wikipedia.images_results),
             ("prop", "imageinfo"),
@@ -550,9 +590,10 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Iter::new(&self)
     }
 
-    fn request_extlinks(&self, cont: &Option<Vec<(String, String)>>) ->
-            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
-        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+    fn request_extlinks(&self, cont: &Option<Vec<(String, String)>>) -> Result<WikiResponse> {
+        let a: Result<(Vec<serde_json::Value>, _)> = cont!(
+            self,
+            cont,
             ("prop", "extlinks"),
             ("ellimit", &*self.wikipedia.links_results)
         );
@@ -561,12 +602,14 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                 Some(p) => p,
                 None => return (Vec::new(), None),
             };
-            (page
-                .as_object()
-                .and_then(|x| x.get("extlinks"))
-                .and_then(|x| x.as_array())
-                .map(|x| x.into_iter().cloned().collect())
-                .unwrap_or(Vec::new()), cont)
+            (
+                page.as_object()
+                    .and_then(|x| x.get("extlinks"))
+                    .and_then(|x| x.as_array())
+                    .map(|x| x.to_vec())
+                    .unwrap_or_default(),
+                cont,
+            )
         })
     }
 
@@ -575,9 +618,10 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Iter::new(&self)
     }
 
-    fn request_links(&self, cont: &Option<Vec<(String, String)>>) ->
-            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
-        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+    fn request_links(&self, cont: &Option<Vec<(String, String)>>) -> Result<WikiResponse> {
+        let a: Result<(Vec<serde_json::Value>, _)> = cont!(
+            self,
+            cont,
             ("prop", "links"),
             ("plnamespace", "0"),
             ("ellimit", &*self.wikipedia.links_results)
@@ -587,12 +631,14 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                 Some(p) => p,
                 None => return (Vec::new(), None),
             };
-            (page
-                .as_object()
-                .and_then(|x| x.get("links"))
-                .and_then(|x| x.as_array())
-                .map(|x| x.into_iter().cloned().collect())
-                .unwrap_or(Vec::new()), cont)
+            (
+                page.as_object()
+                    .and_then(|x| x.get("links"))
+                    .and_then(|x| x.as_array())
+                    .map(|x| x.to_vec())
+                    .unwrap_or_default(),
+                cont,
+            )
         })
     }
 
@@ -601,9 +647,10 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Iter::new(&self)
     }
 
-    fn request_categories(&self, cont: &Option<Vec<(String, String)>>) ->
-            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
-        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+    fn request_categories(&self, cont: &Option<Vec<(String, String)>>) -> Result<WikiResponse> {
+        let a: Result<(Vec<serde_json::Value>, _)> = cont!(
+            self,
+            cont,
             ("prop", "categories"),
             ("cllimit", &*self.wikipedia.categories_results)
         );
@@ -612,12 +659,14 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                 Some(p) => p,
                 None => return (Vec::new(), None),
             };
-            (page
-                .as_object()
-                .and_then(|x| x.get("categories"))
-                .and_then(|x| x.as_array())
-                .map(|x| x.into_iter().cloned().collect())
-                .unwrap_or(Vec::new()), cont)
+            (
+                page.as_object()
+                    .and_then(|x| x.get("categories"))
+                    .and_then(|x| x.as_array())
+                    .map(|x| x.to_vec())
+                    .unwrap_or_default(),
+                cont,
+            )
         })
     }
 
@@ -626,9 +675,10 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         Iter::new(&self)
     }
 
-    fn request_langlinks(&self, cont: &Option<Vec<(String, String)>>) ->
-            Result<(Vec<serde_json::Value>, Option<Vec<(String, String)>>)> {
-        let a:Result<(Vec<serde_json::Value>, _)> = cont!(self, cont,
+    fn request_langlinks(&self, cont: &Option<Vec<(String, String)>>) -> Result<WikiResponse> {
+        let a: Result<(Vec<serde_json::Value>, _)> = cont!(
+            self,
+            cont,
             ("prop", "langlinks"),
             ("lllimit", &*self.wikipedia.links_results)
         );
@@ -637,12 +687,14 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                 Some(p) => p,
                 None => return (Vec::new(), None),
             };
-            (page
-                .as_object()
-                .and_then(|x| x.get("langlinks"))
-                .and_then(|x| x.as_array())
-                .map(|x| x.into_iter().cloned().collect())
-                .unwrap_or(Vec::new()), cont)
+            (
+                page.as_object()
+                    .and_then(|x| x.get("langlinks"))
+                    .and_then(|x| x.as_array())
+                    .map(|x| x.to_vec())
+                    .unwrap_or_default(),
+                cont,
+            )
         })
     }
 
@@ -665,23 +717,30 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
         ];
         let q = try!(self.wikipedia.query(params.into_iter()));
 
-        match self.redirect(&q) {
-            Some(r) => return Page::from_title(&self.wikipedia, r).get_coordinates(),
-            None => (),
+        if let Some(r) = self.redirect(&q) {
+            return Page::from_title(&self.wikipedia, r).get_coordinates();
         }
 
-        let coord = match self.get_first_page(&q)
-                .and_then(|x| x.as_object())
-                .and_then(|x| x.get("coordinates"))
-                .and_then(|x| x.as_array())
-                .and_then(|x| x.into_iter().next())
-                .and_then(|x| x.as_object()) {
+        let coord = match self
+            .get_first_page(&q)
+            .and_then(|x| x.as_object())
+            .and_then(|x| x.get("coordinates"))
+            .and_then(|x| x.as_array())
+            .and_then(|x| x.iter().next())
+            .and_then(|x| x.as_object())
+        {
             Some(c) => c,
             None => return Ok(None),
         };
         Ok(Some((
-            try!(coord.get("lat").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)),
-            try!(coord.get("lon").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)),
+            try!(coord
+                .get("lat")
+                .and_then(|x| x.as_f64())
+                .ok_or(Error::JSONPathError)),
+            try!(coord
+                .get("lon")
+                .and_then(|x| x.as_f64())
+                .ok_or(Error::JSONPathError)),
         )))
     }
 
@@ -703,13 +762,14 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .and_then(|x| x.get("sections"))
             .and_then(|x| x.as_array())
             .ok_or(Error::JSONPathError))
-            .into_iter()
-            .filter_map(|x| x.as_object()
-                    .and_then(|x| x.get("line"))
-                    .and_then(|x| x.as_str())
-                    .map(|x| x.to_owned())
-                    )
-            .collect())
+        .iter()
+        .filter_map(|x| {
+            x.as_object()
+                .and_then(|x| x.get("line"))
+                .and_then(|x| x.as_str())
+                .map(|x| x.to_owned())
+        })
+        .collect())
     }
 
     /// Fetches the content of a section.
@@ -745,9 +805,9 @@ impl<'a, A: http::HttpClient> PartialEq<Page<'a, A>> for Page<'a, A> {
 
 #[cfg(test)]
 mod test {
-    use super::Wikipedia;
     use super::http::HttpClient;
     use super::iter;
+    use super::Wikipedia;
     use std::sync::Mutex;
 
     struct MockClient {
@@ -774,9 +834,14 @@ mod test {
         }
 
         fn get<'a, I>(&self, base_url: &str, args: I) -> Result<String, super::http::Error>
-                where I: Iterator<Item=(&'a str, &'a str)> {
+        where
+            I: Iterator<Item = (&'a str, &'a str)>,
+        {
             self.url.lock().unwrap().push(base_url.to_owned());
-            self.arguments.lock().unwrap().push(args.map(|x| (x.0.to_owned(), x.1.to_owned())).collect());
+            self.arguments
+                .lock()
+                .unwrap()
+                .push(args.map(|x| (x.0.to_owned(), x.1.to_owned())).collect());
             Ok(self.response.lock().unwrap().remove(0))
         }
     }
@@ -798,9 +863,17 @@ mod test {
     #[test]
     fn user_agent() {
         let mut wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{}".to_owned());
+        wikipedia
+            .client
+            .response
+            .lock()
+            .unwrap()
+            .push("{}".to_owned());
         wikipedia.search("hello world").unwrap_err();
-        assert_eq!(&*wikipedia.client.user_agent.unwrap(), "wikipedia (https://github.com/seppo0010/wikipedia-rs)");
+        assert_eq!(
+            &*wikipedia.client.user_agent.unwrap(),
+            "wikipedia (https://github.com/seppo0010/wikipedia-rs)"
+        );
 
         let mut client = MockClient::default();
         client.user_agent("hello world".to_owned());
@@ -813,182 +886,228 @@ mod test {
     #[test]
     fn search() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"search\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"query\":{\"search\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned(),
+        );
         assert_eq!(
-                wikipedia.search("hello world").unwrap(),
-                vec![
-                "hello".to_owned(),
-                "world".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("list".to_owned(), "search".to_owned()),
-                    ("srprop".to_owned(), "".to_owned()),
-                    ("srlimit".to_owned(), "10".to_owned()),
-                    ("srsearch".to_owned(), "hello world".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned())
-                    ]]);
+            wikipedia.search("hello world").unwrap(),
+            vec!["hello".to_owned(), "world".to_owned(),]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("list".to_owned(), "search".to_owned()),
+                ("srprop".to_owned(), "".to_owned()),
+                ("srlimit".to_owned(), "10".to_owned()),
+                ("srsearch".to_owned(), "hello world".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned())
+            ]]
+        );
     }
 
     #[test]
     fn geosearch() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"geosearch\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"query\":{\"geosearch\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned(),
+        );
         assert_eq!(
-                wikipedia.geosearch(-34.603333, -58.381667, 10).unwrap(),
-                vec![
-                "hello".to_owned(),
-                "world".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("list".to_owned(), "geosearch".to_owned()),
-                    ("gsradius".to_owned(), "10".to_owned()),
-                    ("gscoord".to_owned(), "-34.603333|-58.381667".to_owned()),
-                    ("gslimit".to_owned(), "10".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned())
-                    ]]);
+            wikipedia.geosearch(-34.603333, -58.381667, 10).unwrap(),
+            vec!["hello".to_owned(), "world".to_owned(),]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("list".to_owned(), "geosearch".to_owned()),
+                ("gsradius".to_owned(), "10".to_owned()),
+                ("gscoord".to_owned(), "-34.603333|-58.381667".to_owned()),
+                ("gslimit".to_owned(), "10".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned())
+            ]]
+        );
     }
 
     #[test]
     fn random_count() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"random\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"query\":{\"random\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned(),
+        );
         assert_eq!(
-                wikipedia.random_count(10).unwrap(),
-                vec![
-                "hello".to_owned(),
-                "world".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("list".to_owned(), "random".to_owned()),
-                    ("rnnamespace".to_owned(), "0".to_owned()),
-                    ("rnlimit".to_owned(), "10".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned())
-                    ]]);
+            wikipedia.random_count(10).unwrap(),
+            vec!["hello".to_owned(), "world".to_owned(),]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("list".to_owned(), "random".to_owned()),
+                ("rnnamespace".to_owned(), "0".to_owned()),
+                ("rnlimit".to_owned(), "10".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned())
+            ]]
+        );
     }
 
     #[test]
     fn random() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"random\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"query\":{\"random\":[{\"title\":\"hello\"}, {\"title\":\"world\"}]}}".to_owned(),
+        );
+        assert_eq!(wikipedia.random().unwrap(), Some("hello".to_owned()));
         assert_eq!(
-                wikipedia.random().unwrap(),
-                Some("hello".to_owned())
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("list".to_owned(), "random".to_owned()),
-                    ("rnnamespace".to_owned(), "0".to_owned()),
-                    ("rnlimit".to_owned(), "1".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned())
-                    ]]);
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("list".to_owned(), "random".to_owned()),
+                ("rnnamespace".to_owned(), "0".to_owned()),
+                ("rnlimit".to_owned(), "1".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned())
+            ]]
+        );
     }
 
     #[test]
     fn page_content() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"extract\":\"hello\"}}}}".to_owned());
+        wikipedia
+            .client
+            .response
+            .lock()
+            .unwrap()
+            .push("{\"query\":{\"pages\":{\"a\":{\"extract\":\"hello\"}}}}".to_owned());
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         let html = page.get_content().unwrap();
+        assert_eq!(html, "hello".to_owned());
         assert_eq!(
-                html,
-                "hello".to_owned()
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("prop".to_owned(), "extracts|revisions".to_owned()),
-                    ("explaintext".to_owned(), "".to_owned()),
-                    ("rvprop".to_owned(), "ids".to_owned()),
-                    ("redirects".to_owned(), "".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned()),
-                    ("pageids".to_owned(), "4138548".to_owned()),
-                    ]]);
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("prop".to_owned(), "extracts|revisions".to_owned()),
+                ("explaintext".to_owned(), "".to_owned()),
+                ("rvprop".to_owned(), "ids".to_owned()),
+                ("redirects".to_owned(), "".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned()),
+                ("pageids".to_owned(), "4138548".to_owned()),
+            ]]
+        );
     }
 
     #[test]
     fn page_html_content() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"revisions\":[{\"*\":\"hello\"}]}}}}".to_owned());
+        wikipedia
+            .client
+            .response
+            .lock()
+            .unwrap()
+            .push("{\"query\":{\"pages\":{\"a\":{\"revisions\":[{\"*\":\"hello\"}]}}}}".to_owned());
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         let html = page.get_html_content().unwrap();
+        assert_eq!(html, "hello".to_owned());
         assert_eq!(
-                html,
-                "hello".to_owned()
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("prop".to_owned(), "revisions".to_owned()),
-                    ("rvprop".to_owned(), "content".to_owned()),
-                    ("rvlimit".to_owned(), "1".to_owned()),
-                    ("rvparse".to_owned(), "".to_owned()),
-                    ("redirects".to_owned(), "".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned()),
-                    ("pageids".to_owned(), "4138548".to_owned()),
-                    ]]);
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("prop".to_owned(), "revisions".to_owned()),
+                ("rvprop".to_owned(), "content".to_owned()),
+                ("rvlimit".to_owned(), "1".to_owned()),
+                ("rvparse".to_owned(), "".to_owned()),
+                ("redirects".to_owned(), "".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned()),
+                ("pageids".to_owned(), "4138548".to_owned()),
+            ]]
+        );
     }
 
     #[test]
     fn page_summary() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"extract\":\"hello\"}}}}".to_owned());
+        wikipedia
+            .client
+            .response
+            .lock()
+            .unwrap()
+            .push("{\"query\":{\"pages\":{\"a\":{\"extract\":\"hello\"}}}}".to_owned());
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
         let summary = page.get_summary().unwrap();
+        assert_eq!(summary, "hello".to_owned());
         assert_eq!(
-                summary,
-                "hello".to_owned()
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("prop".to_owned(), "extracts".to_owned()),
-                    ("explaintext".to_owned(), "".to_owned()),
-                    ("exintro".to_owned(), "".to_owned()),
-                    ("redirects".to_owned(), "".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned()),
-                    ("titles".to_owned(), "Parkinson\'s law of triviality".to_owned())
-                    ]]);
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("prop".to_owned(), "extracts".to_owned()),
+                ("explaintext".to_owned(), "".to_owned()),
+                ("exintro".to_owned(), "".to_owned()),
+                ("redirects".to_owned(), "".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned()),
+                (
+                    "titles".to_owned(),
+                    "Parkinson\'s law of triviality".to_owned()
+                )
+            ]]
+        );
     }
 
     #[test]
     fn page_redirect_summary() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"redirects\":[{\"to\":\"hello world\"}]}}".to_owned());
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"extract\":\"hello\"}}}}".to_owned());
+        wikipedia
+            .client
+            .response
+            .lock()
+            .unwrap()
+            .push("{\"query\":{\"redirects\":[{\"to\":\"hello world\"}]}}".to_owned());
+        wikipedia
+            .client
+            .response
+            .lock()
+            .unwrap()
+            .push("{\"query\":{\"pages\":{\"a\":{\"extract\":\"hello\"}}}}".to_owned());
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
         let summary = page.get_summary().unwrap();
+        assert_eq!(summary, "hello".to_owned());
         assert_eq!(
-                summary,
-                "hello".to_owned()
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec![
+            *wikipedia.client.url.lock().unwrap(),
+            vec![
                 "https://en.wikipedia.org/w/api.php".to_owned(),
                 "https://en.wikipedia.org/w/api.php".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![
                 vec![
                     ("prop".to_owned(), "extracts".to_owned()),
                     ("explaintext".to_owned(), "".to_owned()),
@@ -996,7 +1115,10 @@ mod test {
                     ("redirects".to_owned(), "".to_owned()),
                     ("format".to_owned(), "json".to_owned()),
                     ("action".to_owned(), "query".to_owned()),
-                    ("titles".to_owned(), "Parkinson\'s law of triviality".to_owned())
+                    (
+                        "titles".to_owned(),
+                        "Parkinson\'s law of triviality".to_owned()
+                    )
                 ],
                 vec![
                     ("prop".to_owned(), "extracts".to_owned()),
@@ -1006,9 +1128,9 @@ mod test {
                     ("format".to_owned(), "json".to_owned()),
                     ("action".to_owned(), "query".to_owned()),
                     ("titles".to_owned(), "hello world".to_owned())
-                    ]
                 ]
-                );
+            ]
+        );
     }
 
     #[test]
@@ -1019,8 +1141,8 @@ mod test {
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
         let images = page.get_images().unwrap().collect::<Vec<_>>();
         assert_eq!(
-                images,
-                vec![
+            images,
+            vec![
                 iter::Image {
                     url: "http://example.com/image1.jpg".to_owned(),
                     title: "Image 1".to_owned(),
@@ -1031,14 +1153,18 @@ mod test {
                     title: "Image 2".to_owned(),
                     description_url: "http://example.com/image2.jpg.html".to_owned(),
                 }
-                ]);
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec![
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec![
                 "https://en.wikipedia.org/w/api.php".to_owned(),
                 "https://en.wikipedia.org/w/api.php".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![
                 vec![
                     ("generator".to_owned(), "images".to_owned()),
                     ("gimlimit".to_owned(), "max".to_owned()),
@@ -1046,7 +1172,10 @@ mod test {
                     ("iiprop".to_owned(), "url".to_owned()),
                     ("format".to_owned(), "json".to_owned()),
                     ("action".to_owned(), "query".to_owned()),
-                    ("titles".to_owned(), "Parkinson\'s law of triviality".to_owned()),
+                    (
+                        "titles".to_owned(),
+                        "Parkinson\'s law of triviality".to_owned()
+                    ),
                     ("continue".to_owned(), "".to_owned())
                 ],
                 vec![
@@ -1056,53 +1185,69 @@ mod test {
                     ("iiprop".to_owned(), "url".to_owned()),
                     ("format".to_owned(), "json".to_owned()),
                     ("action".to_owned(), "query".to_owned()),
-                    ("titles".to_owned(), "Parkinson\'s law of triviality".to_owned()),
+                    (
+                        "titles".to_owned(),
+                        "Parkinson\'s law of triviality".to_owned()
+                    ),
                     ("lol".to_owned(), "1".to_owned())
                 ]
-                ]
-                );
+            ]
+        );
     }
 
     #[test]
     fn page_coordinates() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"coordinates\":[{\"lat\": 2.1, \"lon\":-1.3}]}}}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"query\":{\"pages\":{\"a\":{\"coordinates\":[{\"lat\": 2.1, \"lon\":-1.3}]}}}}"
+                .to_owned(),
+        );
         let page = wikipedia.page_from_title("World".to_owned());
         let coordinates = page.get_coordinates().unwrap().unwrap();
+        assert_eq!(coordinates, (2.1, -1.3));
         assert_eq!(
-                coordinates,
-                (2.1, -1.3)
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("prop".to_owned(), "coordinates".to_owned()),
-                    ("colimit".to_owned(), "max".to_owned()),
-                    ("redirects".to_owned(), "".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned()),
-                    ("titles".to_owned(), "World".to_owned())
-                    ]]);
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("prop".to_owned(), "coordinates".to_owned()),
+                ("colimit".to_owned(), "max".to_owned()),
+                ("redirects".to_owned(), "".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned()),
+                ("titles".to_owned(), "World".to_owned())
+            ]]
+        );
     }
 
     #[test]
     fn page_no_coordinates() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{}}}}".to_owned());
+        wikipedia
+            .client
+            .response
+            .lock()
+            .unwrap()
+            .push("{\"query\":{\"pages\":{\"a\":{}}}}".to_owned());
         let page = wikipedia.page_from_title("World".to_owned());
         assert!(page.get_coordinates().unwrap().is_none());
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("prop".to_owned(), "coordinates".to_owned()),
-                    ("colimit".to_owned(), "max".to_owned()),
-                    ("redirects".to_owned(), "".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned()),
-                    ("titles".to_owned(), "World".to_owned())
-                    ]]);
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("prop".to_owned(), "coordinates".to_owned()),
+                ("colimit".to_owned(), "max".to_owned()),
+                ("redirects".to_owned(), "".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned()),
+                ("titles".to_owned(), "World".to_owned())
+            ]]
+        );
     }
 
     #[test]
@@ -1112,22 +1257,27 @@ mod test {
         wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"extlinks\":[{\"*\": \"//example.com/reference2.html\"}]}}}}".to_owned());
         let page = wikipedia.page_from_title("World".to_owned());
         assert_eq!(
-                page.get_references().unwrap().collect::<Vec<_>>(),
-                vec![
+            page.get_references().unwrap().collect::<Vec<_>>(),
+            vec![
                 iter::Reference {
                     url: "http://example.com/reference1.html".to_owned(),
                 },
                 iter::Reference {
                     url: "http://example.com/reference2.html".to_owned(),
                 }
-                ]);
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec![
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+                "https://en.wikipedia.org/w/api.php".to_owned(),
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![
                 vec![
-                "https://en.wikipedia.org/w/api.php".to_owned(),
-                "https://en.wikipedia.org/w/api.php".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
                     ("prop".to_owned(), "extlinks".to_owned()),
                     ("ellimit".to_owned(), "max".to_owned()),
                     ("format".to_owned(), "json".to_owned()),
@@ -1143,32 +1293,39 @@ mod test {
                     ("titles".to_owned(), "World".to_owned()),
                     ("lol".to_owned(), "1".to_owned())
                 ]
-                ]);
+            ]
+        );
     }
 
     #[test]
     fn get_links() {
         let wikipedia = Wikipedia::<MockClient>::default();
         wikipedia.client.response.lock().unwrap().push("{\"continue\": {\"lol\":\"1\"},\"query\":{\"pages\":{\"a\":{\"links\":[{\"title\": \"Hello\"}]}}}}".to_owned());
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"links\":[{\"title\": \"World\"}]}}}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"query\":{\"pages\":{\"a\":{\"links\":[{\"title\": \"World\"}]}}}}".to_owned(),
+        );
         let page = wikipedia.page_from_title("World".to_owned());
         assert_eq!(
-                page.get_links().unwrap().collect::<Vec<_>>(),
-                vec![
+            page.get_links().unwrap().collect::<Vec<_>>(),
+            vec![
                 iter::Link {
                     title: "Hello".to_owned(),
                 },
                 iter::Link {
                     title: "World".to_owned(),
                 }
-                ]);
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec![
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec![
                 "https://en.wikipedia.org/w/api.php".to_owned(),
                 "https://en.wikipedia.org/w/api.php".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![
                 vec![
                     ("prop".to_owned(), "links".to_owned()),
                     ("plnamespace".to_owned(), "0".to_owned()),
@@ -1187,32 +1344,40 @@ mod test {
                     ("titles".to_owned(), "World".to_owned()),
                     ("lol".to_owned(), "1".to_owned()),
                 ]
-                ]);
+            ]
+        );
     }
 
     #[test]
     fn get_categories() {
         let wikipedia = Wikipedia::<MockClient>::default();
         wikipedia.client.response.lock().unwrap().push("{\"continue\": {\"lol\":\"1\"},\"query\":{\"pages\":{\"a\":{\"categories\":[{\"title\": \"Hello\"}]}}}}".to_owned());
-        wikipedia.client.response.lock().unwrap().push("{\"query\":{\"pages\":{\"a\":{\"categories\":[{\"title\": \"Category: World\"}]}}}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"query\":{\"pages\":{\"a\":{\"categories\":[{\"title\": \"Category: World\"}]}}}}"
+                .to_owned(),
+        );
         let page = wikipedia.page_from_title("World".to_owned());
         assert_eq!(
-                page.get_categories().unwrap().collect::<Vec<_>>(),
-                vec![
+            page.get_categories().unwrap().collect::<Vec<_>>(),
+            vec![
                 iter::Category {
                     title: "Hello".to_owned(),
                 },
                 iter::Category {
                     title: "World".to_owned(),
                 }
-                ]);
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec![
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec![
                 "https://en.wikipedia.org/w/api.php".to_owned(),
                 "https://en.wikipedia.org/w/api.php".to_owned(),
-                ]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![
                 vec![
                     ("prop".to_owned(), "categories".to_owned()),
                     ("cllimit".to_owned(), "max".to_owned()),
@@ -1229,27 +1394,34 @@ mod test {
                     ("titles".to_owned(), "World".to_owned()),
                     ("lol".to_owned(), "1".to_owned()),
                 ]
-                ]);
+            ]
+        );
     }
 
     #[test]
     fn sections() {
         let wikipedia = Wikipedia::<MockClient>::default();
-        wikipedia.client.response.lock().unwrap().push("{\"parse\":{\"sections\":[{\"line\":\"hello\"}, {\"line\":\"world\"}]}}".to_owned());
+        wikipedia.client.response.lock().unwrap().push(
+            "{\"parse\":{\"sections\":[{\"line\":\"hello\"}, {\"line\":\"world\"}]}}".to_owned(),
+        );
         let page = wikipedia.page_from_pageid("123".to_owned());
         assert_eq!(
-                page.get_sections().unwrap(),
-                vec!["hello".to_owned(), "world".to_owned()]
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("prop".to_owned(), "sections".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "parse".to_owned()),
-                    ("pageid".to_owned(), "123".to_owned())
-                    ]]);
+            page.get_sections().unwrap(),
+            vec!["hello".to_owned(), "world".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("prop".to_owned(), "sections".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "parse".to_owned()),
+                ("pageid".to_owned(), "123".to_owned())
+            ]]
+        );
     }
 
     #[test]
@@ -1257,20 +1429,24 @@ mod test {
         let wikipedia = Wikipedia::<MockClient>::default();
         wikipedia.client.response.lock().unwrap().push("{\"query\":{\"languages\":[{\"*\":\"hello\", \"code\":\"world\"}, {\"*\":\"foo\", \"code\":\"bar\"}]}}".to_owned());
         assert_eq!(
-                wikipedia.get_languages().unwrap(),
-                vec![
-                    ("world".to_owned(), "hello".to_owned()),
-                    ("bar".to_owned(), "foo".to_owned()),
-                ]
-                );
-        assert_eq!(*wikipedia.client.url.lock().unwrap(),
-                vec!["https://en.wikipedia.org/w/api.php".to_owned()]);
-        assert_eq!(*wikipedia.client.arguments.lock().unwrap(),
-                vec![vec![
-                    ("meta".to_owned(), "siteinfo".to_owned()),
-                    ("siprop".to_owned(), "languages".to_owned()),
-                    ("format".to_owned(), "json".to_owned()),
-                    ("action".to_owned(), "query".to_owned())
-                    ]]);
+            wikipedia.get_languages().unwrap(),
+            vec![
+                ("world".to_owned(), "hello".to_owned()),
+                ("bar".to_owned(), "foo".to_owned()),
+            ]
+        );
+        assert_eq!(
+            *wikipedia.client.url.lock().unwrap(),
+            vec!["https://en.wikipedia.org/w/api.php".to_owned()]
+        );
+        assert_eq!(
+            *wikipedia.client.arguments.lock().unwrap(),
+            vec![vec![
+                ("meta".to_owned(), "siteinfo".to_owned()),
+                ("siprop".to_owned(), "languages".to_owned()),
+                ("format".to_owned(), "json".to_owned()),
+                ("action".to_owned(), "query".to_owned())
+            ]]
+        );
     }
 }
