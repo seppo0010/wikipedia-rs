@@ -119,6 +119,21 @@ impl<A: http::HttpClient + Default> Default for Wikipedia<A> {
     }
 }
 
+impl<A: http::HttpClient + Clone> Clone for Wikipedia<A> {
+    fn clone(&self) -> Self {
+        Wikipedia {
+            client: self.client.clone(),
+            pre_language_url: self.pre_language_url.clone(),
+            post_language_url: self.post_language_url.clone(),
+            language: self.language.clone(),
+            search_results: self.search_results.clone(),
+            images_results: self.images_results.clone(),
+            links_results: self.links_results.clone(),
+            categories_results: self.categories_results.clone(),
+        }
+    }
+}
+
 impl<A: http::HttpClient> Wikipedia<A> {
     /// Creates a new object using the provided client and default values.
     pub fn new(mut client: A) -> Self {
