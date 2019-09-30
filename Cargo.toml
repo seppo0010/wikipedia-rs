@@ -1,6 +1,6 @@
 [package]
 name = "wikipedia"
-version = "0.3.3"
+version = "0.3.4"
 authors = ["Sebastian Waisbrot <seppo0010@gmail.com>"]
 license-file = "LICENSE"
 
