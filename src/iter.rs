@@ -1,29 +1,30 @@
-use std::vec::IntoIter;
+use crate::WikiResponse;
 use std::marker::PhantomData;
+use std::vec::IntoIter;
 
 use serde_json::Value;
 
-use super::{Page, Result, http};
+use super::{http, Page, Result};
 
 pub struct Iter<'a, A: 'a + http::HttpClient, B: IterItem> {
     page: &'a Page<'a, A>,
     inner: IntoIter<Value>,
     cont: Option<Vec<(String, String)>>,
-    phantom: PhantomData<B>
+    phantom: PhantomData<B>,
 }
 
 impl<'a, A: http::HttpClient, B: IterItem> Iter<'a, A, B> {
     pub fn new(page: &'a Page<A>) -> Result<Iter<'a, A, B>> {
         let (array, cont) = try!(B::request_next(page, &None));
         Ok(Iter {
-            page: page,
+            page,
             inner: array.into_iter(),
-            cont: cont,
+            cont,
             phantom: PhantomData,
         })
     }
 
-    fn fetch_next(&mut self) -> Result <()> {
+    fn fetch_next(&mut self) -> Result<()> {
         if self.cont.is_some() {
             let (array, cont) = try!(B::request_next(self.page, &self.cont));
             self.inner = array.into_iter();
@@ -44,14 +45,16 @@ impl<'a, A: http::HttpClient, B: IterItem> Iterator for Iter<'a, A, B> {
                     Err(_) => None,
                 },
                 None => None,
-            }
+            },
         }
     }
 }
 
 pub trait IterItem: Sized {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)>;
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<WikiResponse>;
     fn from_value(value: &Value) -> Option<Self>;
 }
 
@@ -63,8 +66,10 @@ pub struct Image {
 }
 
 impl IterItem for Image {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<WikiResponse> {
         page.request_images(&cont)
     }
 
@@ -77,23 +82,26 @@ impl IterItem for Image {
         let title = obj
             .get("title")
             .and_then(|x| x.as_str())
-            .unwrap_or("").to_owned();
+            .unwrap_or("")
+            .to_owned();
         let url = obj
             .get("imageinfo")
             .and_then(|x| x.as_array())
-            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("url"))
             .and_then(|x| x.as_str())
-            .unwrap_or("").to_owned();
+            .unwrap_or("")
+            .to_owned();
         let description_url = obj
             .get("imageinfo")
             .and_then(|x| x.as_array())
-            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("descriptionurl"))
             .and_then(|x| x.as_str())
-            .unwrap_or("").to_owned();
+            .unwrap_or("")
+            .to_owned();
 
         Some(Image {
             url: url.to_owned(),
@@ -109,8 +117,10 @@ pub struct Reference {
 }
 
 impl IterItem for Reference {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<WikiResponse> {
         page.request_extlinks(&cont)
     }
 
@@ -135,8 +145,10 @@ pub struct Link {
 }
 
 impl IterItem for Link {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<WikiResponse> {
         page.request_links(&cont)
     }
 
@@ -145,7 +157,9 @@ impl IterItem for Link {
             .as_object()
             .and_then(|x| x.get("title"))
             .and_then(|x| x.as_str())
-            .map(|s| Link { title: s.to_owned() })
+            .map(|s| Link {
+                title: s.to_owned(),
+            })
     }
 }
 
@@ -159,18 +173,18 @@ pub struct LangLink {
 }
 
 impl IterItem for LangLink {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<WikiResponse> {
         page.request_langlinks(&cont)
     }
 
     fn from_value(value: &Value) -> Option<LangLink> {
-        value
-            .as_object()
-            .map(|l| LangLink {
-                lang: l.get("lang").unwrap().as_str().unwrap().into(),
-                title: l.get("*").and_then(|n| n.as_str()).map(|n| n.into()),
-            })
+        value.as_object().map(|l| LangLink {
+            lang: l.get("lang").unwrap().as_str().unwrap().into(),
+            title: l.get("*").and_then(|n| n.as_str()).map(|n| n.into()),
+        })
     }
 }
 
@@ -180,8 +194,10 @@ pub struct Category {
 }
 
 impl IterItem for Category {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<WikiResponse> {
         page.request_categories(&cont)
     }
 

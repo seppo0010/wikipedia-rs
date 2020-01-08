@@ -12,11 +12,13 @@ repository = "https://github.com/seppo0010/wikipedia-rs/"
 keywords = ["wikipedia", "api"]
 
 [features]
-default = ["http-client"]
+default = ["http-client", "async"]
 http-client = ["reqwest", "url"]
+async = ["futures"]
 
 [dependencies]
 serde_json = "1.0.35"
 reqwest = { version = "0.9.8", optional = true }
 url = { version = "1.7.2", optional = true }
 failure = "0.1.5"
+futures = { version = "0.1.28", optional = true }
