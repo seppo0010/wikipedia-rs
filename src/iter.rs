@@ -14,7 +14,7 @@ pub struct Iter<'a, A: 'a + http::HttpClient, B: IterItem> {
 
 impl<'a, A: http::HttpClient, B: IterItem> Iter<'a, A, B> {
     pub fn new(page: &'a Page<A>) -> Result<Iter<'a, A, B>> {
-        let (array, cont) = try!(B::request_next(page, &None));
+        let (array, cont) = B::request_next(page, &None)?;
         Ok(Iter {
             page: page,
             inner: array.into_iter(),
@@ -25,7 +25,7 @@ impl<'a, A: http::HttpClient, B: IterItem> Iter<'a, A, B> {
 
     fn fetch_next(&mut self) -> Result <()> {
         if self.cont.is_some() {
-            let (array, cont) = try!(B::request_next(self.page, &self.cont));
+            let (array, cont) = B::request_next(self.page, &self.cont)?;
             self.inner = array.into_iter();
             self.cont = cont;
         }
