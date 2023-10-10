@@ -3,14 +3,15 @@ pub use failure::Error;
 pub trait HttpClient {
     fn user_agent(&mut self, user_agent: String);
     fn get<'a, I>(&self, base_url: &str, args: I) -> Result<String, Error>
-        where I: Iterator<Item=(&'a str, &'a str)>;
+    where
+        I: Iterator<Item = (&'a str, &'a str)>;
 }
 
-#[cfg(feature="http-client")]
+#[cfg(feature = "http-client")]
 pub mod default {
-    use std::io::Read;
-    use reqwest;
     use failure::err_msg;
+    use reqwest;
+    use std::io::Read;
 
     use super::{Error, HttpClient};
 
@@ -20,7 +21,9 @@ pub mod default {
 
     impl Default for Client {
         fn default() -> Self {
-            Client { user_agent: "".to_owned() }
+            Client {
+                user_agent: "".to_owned(),
+            }
         }
     }
 
@@ -30,10 +33,13 @@ pub mod default {
         }
 
         fn get<'a, I>(&self, base_url: &str, args: I) -> Result<String, Error>
-                where I: Iterator<Item=(&'a str, &'a str)> {
+        where
+            I: Iterator<Item = (&'a str, &'a str)>,
+        {
             let url = reqwest::Url::parse_with_params(base_url, args)?;
-            let client = reqwest::Client::new();
-            let mut response = client.get(url)
+            let client = reqwest::blocking::Client::new();
+            let mut response = client
+                .get(url)
                 .header(reqwest::header::USER_AGENT, self.user_agent.clone())
                 .send()?;
 

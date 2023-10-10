@@ -27,14 +27,13 @@ const LANGUAGE_URL_MARKER:&'static str = "{language}";
 macro_rules! results {
     ($data: expr, $query_field: expr) => {
         // There has to be a better way to write the following code
-        try!(
-            $data.as_object()
-            .and_then(|x| x.get("query"))
-            .and_then(|x| x.as_object())
-            .and_then(|x| x.get($query_field))
-            .and_then(|x| x.as_array())
-            .ok_or(Error::JSONPathError)
-            ).into_iter().filter_map(|i|
+        $data.as_object()
+        .and_then(|x| x.get("query"))
+        .and_then(|x| x.as_object())
+        .and_then(|x| x.get($query_field))
+        .and_then(|x| x.as_array())
+        .ok_or(Error::JSONPathError)?
+            .into_iter().filter_map(|i|
                 i.as_object()
                 .and_then(|i| i.get("title"))
                 .and_then(|s| s.as_str().map(|s| s.to_owned()))
@@ -57,17 +56,17 @@ macro_rules! cont {
             },
             None => params.push(("continue", "")),
         }
-        let q = try!($this.wikipedia.query(params.into_iter()));
+        let q = $this.wikipedia.query(params.into_iter())?;
 
-        let pages = try!(q
+        let pages = q
             .as_object()
             .and_then(|x| x.get("query"))
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("pages"))
             .and_then(|x| x.as_object())
-            .ok_or(Error::JSONPathError));
+            .ok_or(Error::JSONPathError)?;
 
-        Ok((pages.values().cloned().collect(), try!($this.parse_cont(&q))))
+        Ok((pages.values().cloned().collect(), $this.parse_cont(&q)?))
     }}
 }
 
@@ -153,20 +152,20 @@ impl<A: http::HttpClient> Wikipedia<A> {
     /// Returns a list of languages in the form of (`identifier`, `language`),
     /// for example [("en", "English"), ("es", "Español")]
     pub fn get_languages(&self) -> Result<Vec<(String, String)>> {
-        let q = try!(self.query(vec![
-                ("meta", "siteinfo"),
-                ("siprop", "languages"),
-                ("format", "json"),
-                ("action", "query"),
-            ].into_iter()));
+        let q = self.query(vec![
+            ("meta", "siteinfo"),
+            ("siprop", "languages"),
+            ("format", "json"),
+            ("action", "query"),
+        ].into_iter())?;
 
-        Ok(try!(q
+        Ok(q
             .as_object()
             .and_then(|x| x.get("query"))
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("languages"))
             .and_then(|x| x.as_array())
-            .ok_or(Error::JSONPathError))
+            .ok_or(Error::JSONPathError)?
             .into_iter()
             .filter_map(|x| {
                         let o = x.as_object();
@@ -231,14 +230,14 @@ impl<A: http::HttpClient> Wikipedia<A> {
     /// ```
     pub fn search(&self, query: &str) -> Result<Vec<String>> {
         let results = &*format!("{}", self.search_results);
-        let data = try!(self.query(vec![
-                ("list", "search"),
-                ("srprop", ""),
-                ("srlimit", results),
-                ("srsearch", query),
-                ("format", "json"),
-                ("action", "query"),
-            ].into_iter()));
+        let data = self.query(vec![
+            ("list", "search"),
+            ("srprop", ""),
+            ("srlimit", results),
+            ("srsearch", query),
+            ("format", "json"),
+            ("action", "query"),
+        ].into_iter())?;
 
         Ok(results!(data, "search"))
     }
@@ -265,33 +264,33 @@ impl<A: http::HttpClient> Wikipedia<A> {
             return Err(Error::InvalidParameter("radius".to_string()))
         }
         let results = &*format!("{}", self.search_results);
-        let data = try!(self.query(vec![
-                ("list", "geosearch"),
-                ("gsradius", &*format!("{}", radius)),
-                ("gscoord", &*format!("{}|{}", latitude, longitude)),
-                ("gslimit", results),
-                ("format", "json"),
-                ("action", "query"),
-                ].into_iter()));
+        let data = self.query(vec![
+            ("list", "geosearch"),
+            ("gsradius", &*format!("{}", radius)),
+            ("gscoord", &*format!("{}|{}", latitude, longitude)),
+            ("gslimit", results),
+            ("format", "json"),
+            ("action", "query"),
+        ].into_iter())?;
         Ok(results!(data, "geosearch"))
     }
 
     /// Fetches `count` random articles' title.
     pub fn random_count(&self, count: u8) -> Result<Vec<String>> {
-        let data = try!(self.query(vec![
-                ("list", "random"),
-                ("rnnamespace", "0"),
-                ("rnlimit", &*format!("{}", count)),
-                ("format", "json"),
-                ("action", "query"),
-                ].into_iter()));
+        let data = self.query(vec![
+            ("list", "random"),
+            ("rnnamespace", "0"),
+            ("rnlimit", &*format!("{}", count)),
+            ("format", "json"),
+            ("action", "query"),
+        ].into_iter())?;
         let r:Vec<String> = results!(data, "random");
         Ok(r)
     }
 
     /// Fetches a random article's title.
     pub fn random(&self) -> Result<Option<String>> {
-        Ok(try!(self.random_count(1)).into_iter().next())
+        Ok(self.random_count(1)?.into_iter().next())
     }
 
     /// Creates a new `Page` given a `title`.
@@ -344,7 +343,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             TitlePageId::PageId(ref s) => Ok(s.clone()),
             TitlePageId::Title(_) => {
                 let qp = self.identifier.query_param();
-                let q = try!(self.wikipedia.query(vec![
+                let q = self.wikipedia.query(vec![
                     ("prop", "info|pageprops"),
                     ("inprop", "url"),
                     ("ppprop", "disambiguation"),
@@ -352,19 +351,19 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                     ("format", "json"),
                     ("action", "query"),
                     (&*qp.0, &*qp.1),
-                ].into_iter()));
+                ].into_iter())?;
 
                 match self.redirect(&q) {
                     Some(r) => return Page::from_title(&self.wikipedia, r).get_pageid(),
                     None => (),
                 }
-                let pages = try!(q
+                let pages = q
                     .as_object()
                     .and_then(|x| x.get("query"))
                     .and_then(|x| x.as_object())
                     .and_then(|x| x.get("pages"))
                     .and_then(|x| x.as_object())
-                    .ok_or(Error::JSONPathError));
+                    .ok_or(Error::JSONPathError)?;
                 pages.keys().cloned().next().ok_or(Error::JSONPathError)
             }
         }
@@ -376,7 +375,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             TitlePageId::Title(ref s) => Ok(s.clone()),
             TitlePageId::PageId(_) => {
                 let qp = self.identifier.query_param();
-                let q = try!(self.wikipedia.query(vec![
+                let q = self.wikipedia.query(vec![
                     ("prop", "info|pageprops"),
                     ("inprop", "url"),
                     ("ppprop", "disambiguation"),
@@ -384,27 +383,27 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
                     ("format", "json"),
                     ("action", "query"),
                     (&*qp.0, &*qp.1),
-                ].into_iter()));
+                ].into_iter())?;
 
                 match self.redirect(&q) {
                     Some(r) => return Ok(r),
                     None => (),
                 }
-                let pages = try!(q
+                let pages = q
                     .as_object()
                     .and_then(|x| x.get("query"))
                     .and_then(|x| x.as_object())
                     .and_then(|x| x.get("pages"))
                     .and_then(|x| x.as_object())
-                    .ok_or(Error::JSONPathError));
+                    .ok_or(Error::JSONPathError)?;
                 let page = match pages.values().next() {
                     Some(p) => p,
                     None => return Err(Error::JSONPathError),
                 };
-                Ok(try!(page.as_object()
+                Ok(page.as_object()
                     .and_then(|x| x.get("title"))
                     .and_then(|x| x.as_str())
-                    .ok_or(Error::JSONPathError))
+                    .ok_or(Error::JSONPathError)?
                     .to_owned())
             },
         }
@@ -446,7 +445,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
     /// Gets the markdown content of the article.
     pub fn get_content(&self) -> Result<String> {
         let qp = self.identifier.query_param();
-        let q = try!(self.wikipedia.query(vec![
+        let q = self.wikipedia.query(vec![
             ("prop", "extracts|revisions"),
             ("explaintext", ""),
             ("rvprop", "ids"),
@@ -454,25 +453,25 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             ("format", "json"),
             ("action", "query"),
             (&*qp.0, &*qp.1),
-        ].into_iter()));
+        ].into_iter())?;
 
         match self.redirect(&q) {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_content(),
             None => (),
         };
 
-        Ok(try!(self.get_first_page(&q)
+        Ok(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
             .and_then(|x| x.as_str())
-            .ok_or(Error::JSONPathError))
+            .ok_or(Error::JSONPathError)?
             .to_owned())
     }
 
     /// Gets the html content of the article.
     pub fn get_html_content(&self) -> Result<String> {
         let qp = self.identifier.query_param();
-        let q = try!(self.wikipedia.query(vec![
+        let q = self.wikipedia.query(vec![
             ("prop", "revisions"),
             ("rvprop", "content"),
             ("rvlimit", "1"),
@@ -481,14 +480,14 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             ("format", "json"),
             ("action", "query"),
             (&*qp.0, &*qp.1),
-        ].into_iter()));
+        ].into_iter())?;
 
         match self.redirect(&q) {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_html_content(),
             None => (),
         }
 
-        Ok(try!(self.get_first_page(&q)
+        Ok(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("revisions"))
             .and_then(|x| x.as_array())
@@ -496,14 +495,14 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("*"))
             .and_then(|x| x.as_str())
-            .ok_or(Error::JSONPathError))
+            .ok_or(Error::JSONPathError)?
             .to_owned())
     }
 
     /// Gets a summary of the article.
     pub fn get_summary(&self) -> Result<String> {
         let qp = self.identifier.query_param();
-        let q = try!(self.wikipedia.query(vec![
+        let q = self.wikipedia.query(vec![
             ("prop", "extracts"),
             ("explaintext", ""),
             ("exintro", ""),
@@ -511,18 +510,18 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             ("format", "json"),
             ("action", "query"),
             (&*qp.0, &*qp.1),
-        ].into_iter()));
+        ].into_iter())?;
 
         match self.redirect(&q) {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_summary(),
             None => (),
         }
 
-        Ok(try!(self.get_first_page(&q)
+        Ok(self.get_first_page(&q)
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("extract"))
             .and_then(|x| x.as_str())
-            .ok_or(Error::JSONPathError))
+            .ok_or(Error::JSONPathError)?
             .to_owned())
     }
 
@@ -678,7 +677,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             ("action", "query"),
             (&*qp.0, &*qp.1),
         ];
-        let q = try!(self.wikipedia.query(params.into_iter()));
+        let q = self.wikipedia.query(params.into_iter())?;
 
         match self.redirect(&q) {
             Some(r) => return Page::from_title(&self.wikipedia, r).get_coordinates(),
@@ -695,29 +694,29 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
             None => return Ok(None),
         };
         Ok(Some((
-            try!(coord.get("lat").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)),
-            try!(coord.get("lon").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)),
+            coord.get("lat").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)?,
+            coord.get("lon").and_then(|x| x.as_f64()).ok_or(Error::JSONPathError)?,
         )))
     }
 
     /// Fetches all sections of the article.
     pub fn get_sections(&self) -> Result<Vec<String>> {
-        let pageid = try!(self.get_pageid());
+        let pageid = self.get_pageid()?;
         let params = vec![
             ("prop", "sections"),
             ("format", "json"),
             ("action", "parse"),
             ("pageid", &*pageid),
         ];
-        let q = try!(self.wikipedia.query(params.into_iter()));
+        let q = self.wikipedia.query(params.into_iter())?;
 
-        Ok(try!(q
+        Ok(q
             .as_object()
             .and_then(|x| x.get("parse"))
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("sections"))
             .and_then(|x| x.as_array())
-            .ok_or(Error::JSONPathError))
+            .ok_or(Error::JSONPathError)?
             .into_iter()
             .filter_map(|x| x.as_object()
                     .and_then(|x| x.get("line"))
@@ -730,7 +729,7 @@ impl<'a, A: http::HttpClient> Page<'a, A> {
     /// Fetches the content of a section.
     pub fn get_section_content(&self, title: &str) -> Result<Option<String>> {
         let headr = format!("== {} ==", title);
-        let content = try!(self.get_content());
+        let content = self.get_content()?;
         let index = match content.find(&*headr) {
             Some(i) => headr.len() + i,
             None => return Ok(None),
