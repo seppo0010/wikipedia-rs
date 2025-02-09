@@ -21,9 +21,10 @@ mod tests {
     #[test]
     fn geosearch() {
         let wikipedia = w();
-        let results = wikipedia.geosearch(-34.603333, -58.381667, 10).unwrap();
+        let results = wikipedia.geosearch(-34.607307, -58.445566, 1000).unwrap();
         assert!(!results.is_empty());
-        assert!(results.contains(&"Buenos Aires".to_owned()));
+        eprintln!("{:?}", results);
+        assert!(results.contains(&"Villa Crespo".to_owned()));
     }
 
     #[test]
@@ -216,7 +217,6 @@ mod tests {
                 page.get_sections().unwrap(),
                 vec![
                 "Argument".to_owned(),
-                "Examples".to_owned(),
                 "Related principles and formulations".to_owned(),
                 "See also".to_owned(),
                 "References".to_owned(),
@@ -234,7 +234,6 @@ mod tests {
                 page.get_sections().unwrap(),
                 vec![
                 "Argument".to_owned(),
-                "Examples".to_owned(),
                 "Related principles and formulations".to_owned(),
                 "See also".to_owned(),
                 "References".to_owned(),
@@ -248,8 +247,8 @@ mod tests {
     fn section_content() {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
-        assert!(page.get_section_content("Examples").unwrap().unwrap()
-                .contains("finance committee meeting"))
+        assert!(page.get_section_content("Argument").unwrap().unwrap()
+                .contains("reactor is so vastly expensive"))
     }
 
     #[test]
