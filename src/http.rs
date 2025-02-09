@@ -26,6 +26,12 @@ pub mod default {
         }
     }
 
+    impl From<reqwest::Error> for Error {
+        fn from(e: reqwest::Error) -> Error {
+            Error::HTTPError(Box::new(e))
+        }
+    }
+
     impl HttpClient for Client {
         fn user_agent(&mut self, user_agent: String) {
             self.user_agent = user_agent;
@@ -41,12 +47,8 @@ pub mod default {
             let mut response = client
                 .get(url)
                 .header(reqwest::header::USER_AGENT, self.user_agent.clone())
-                .send()
-                .map_err(|_| Error::HTTPError)?;
-
-            if !response.status().is_success() {
-                return Err(Error::HTTPError);
-            }
+                .send()?
+                .error_for_status()?;
 
             let mut response_str = String::new();
             response.read_to_string(&mut response_str)?;

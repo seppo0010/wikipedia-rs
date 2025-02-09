@@ -78,7 +78,7 @@ pub enum Error {
     URLError,
     /// Some error communicating with the server
     #[error("HTTP Error")]
-    HTTPError,
+    HTTPError(#[from] Box<dyn std::error::Error>),
     /// Error reading response
     #[error("IO Error: {0}")]
     IOError(#[from] io::Error),
@@ -215,7 +215,7 @@ impl<A: http::HttpClient> Wikipedia<A> {
 
     fn query<'a, I>(&self, args: I) -> Result<serde_json::Value>
             where I: Iterator<Item=(&'a str, &'a str)> {
-        let response_str = self.client.get(&self.base_url(), args).map_err(|_| Error::HTTPError)?;
+        let response_str = self.client.get(&self.base_url(), args)?;
         let json = serde_json::from_str(&response_str).map_err(Error::JSONError)?;
         Ok(json)
     }
