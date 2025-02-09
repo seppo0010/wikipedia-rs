@@ -2,9 +2,9 @@ extern crate wikipedia;
 
 #[cfg(feature = "http-client")]
 mod tests {
-    use wikipedia::Wikipedia;
-    use wikipedia::http;
     use std::collections::HashSet;
+    use wikipedia::http;
+    use wikipedia::Wikipedia;
 
     fn w() -> Wikipedia<http::default::Client> {
         Wikipedia::default()
@@ -50,7 +50,10 @@ mod tests {
     fn title() {
         let wikipedia = w();
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
-        assert_eq!(page.get_title().unwrap(), "Parkinson's law of triviality".to_owned());
+        assert_eq!(
+            page.get_title().unwrap(),
+            "Parkinson's law of triviality".to_owned()
+        );
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         assert_eq!(page.get_title().unwrap(), "Law of triviality".to_owned());
     }
@@ -176,17 +179,11 @@ mod tests {
         let page = wikipedia.page_from_title("Law of triviality".to_owned());
         let langlinks = page.get_langlinks().unwrap().collect::<Vec<_>>();
         assert_eq!(
-            langlinks
-                .iter().find(|ll| ll.lang == *"nl")
-                .unwrap()
-                .title,
+            langlinks.iter().find(|ll| ll.lang == *"nl").unwrap().title,
             Some("Trivialiteitswet van Parkinson".into()),
         );
         assert_eq!(
-            langlinks
-                .iter().find(|ll| ll.lang == *"fr")
-                .unwrap()
-                .title,
+            langlinks.iter().find(|ll| ll.lang == *"fr").unwrap().title,
             Some("Loi de futilité de Parkinson".into()),
         );
     }
@@ -214,16 +211,16 @@ mod tests {
         let wikipedia = w();
         let page = wikipedia.page_from_title("Bikeshedding".to_owned());
         assert_eq!(
-                page.get_sections().unwrap(),
-                vec![
+            page.get_sections().unwrap(),
+            vec![
                 "Argument".to_owned(),
                 "Related principles and formulations".to_owned(),
                 "See also".to_owned(),
                 "References".to_owned(),
                 "Further reading".to_owned(),
                 "External links".to_owned(),
-                ]
-                )
+            ]
+        )
     }
 
     #[test]
@@ -231,24 +228,27 @@ mod tests {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         assert_eq!(
-                page.get_sections().unwrap(),
-                vec![
+            page.get_sections().unwrap(),
+            vec![
                 "Argument".to_owned(),
                 "Related principles and formulations".to_owned(),
                 "See also".to_owned(),
                 "References".to_owned(),
                 "Further reading".to_owned(),
                 "External links".to_owned(),
-                ]
-                )
+            ]
+        )
     }
 
     #[test]
     fn section_content() {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
-        assert!(page.get_section_content("Argument").unwrap().unwrap()
-                .contains("reactor is so vastly expensive"))
+        assert!(page
+            .get_section_content("Argument")
+            .unwrap()
+            .unwrap()
+            .contains("reactor is so vastly expensive"))
     }
 
     #[test]

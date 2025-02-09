@@ -41,8 +41,8 @@ pub mod default {
         where
             I: Iterator<Item = (&'a str, &'a str)>,
         {
-            let url = reqwest::Url::parse_with_params(base_url, args)
-                .map_err(|_| Error::URLError)?;
+            let url =
+                reqwest::Url::parse_with_params(base_url, args).map_err(|_| Error::URLError)?;
             let client = reqwest::blocking::Client::new();
             let mut response = client
                 .get(url)
