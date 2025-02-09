@@ -14,7 +14,7 @@ mod tests {
     fn search() {
         let wikipedia = w();
         let results = wikipedia.search("hello world").unwrap();
-        assert!(results.len() > 0);
+        assert!(!results.is_empty());
         assert!(results.contains(&"\"Hello, World!\" program".to_owned()));
     }
 
@@ -22,7 +22,7 @@ mod tests {
     fn geosearch() {
         let wikipedia = w();
         let results = wikipedia.geosearch(-34.603333, -58.381667, 10).unwrap();
-        assert!(results.len() > 0);
+        assert!(!results.is_empty());
         assert!(results.contains(&"Buenos Aires".to_owned()));
     }
 
@@ -103,9 +103,9 @@ mod tests {
         let mut c = 0;
         let mut set = HashSet::new();
         for i in images {
-            assert!(i.title.len() > 0);
-            assert!(i.url.len() > 0);
-            assert!(i.description_url.len() > 0);
+            assert!(!i.title.is_empty());
+            assert!(!i.url.is_empty());
+            assert!(!i.description_url.is_empty());
             c += 1;
             set.insert(i.title);
             if c == 11 {
@@ -176,18 +176,14 @@ mod tests {
         let langlinks = page.get_langlinks().unwrap().collect::<Vec<_>>();
         assert_eq!(
             langlinks
-                .iter()
-                .filter(|ll| ll.lang == "nl".to_owned())
-                .next()
+                .iter().find(|ll| ll.lang == *"nl")
                 .unwrap()
                 .title,
             Some("Trivialiteitswet van Parkinson".into()),
         );
         assert_eq!(
             langlinks
-                .iter()
-                .filter(|ll| ll.lang == "fr".to_owned())
-                .next()
+                .iter().find(|ll| ll.lang == *"fr")
                 .unwrap()
                 .title,
             Some("Loi de futilité de Parkinson".into()),

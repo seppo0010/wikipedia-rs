@@ -1,4 +1,4 @@
-pub use failure::Error;
+pub use crate::Error;
 
 pub trait HttpClient {
     fn user_agent(&mut self, user_agent: String);
@@ -9,7 +9,6 @@ pub trait HttpClient {
 
 #[cfg(feature = "http-client")]
 pub mod default {
-    use failure::err_msg;
     use reqwest;
     use std::io::Read;
 
@@ -36,14 +35,18 @@ pub mod default {
         where
             I: Iterator<Item = (&'a str, &'a str)>,
         {
-            let url = reqwest::Url::parse_with_params(base_url, args)?;
+            let url = reqwest::Url::parse_with_params(base_url, args)
+                .map_err(|_| Error::URLError)?;
             let client = reqwest::blocking::Client::new();
             let mut response = client
                 .get(url)
                 .header(reqwest::header::USER_AGENT, self.user_agent.clone())
-                .send()?;
+                .send()
+                .map_err(|_| Error::HTTPError)?;
 
-            ensure!(response.status().is_success(), err_msg("Bad status"));
+            if !response.status().is_success() {
+                return Err(Error::HTTPError);
+            }
 
             let mut response_str = String::new();
             response.read_to_string(&mut response_str)?;
