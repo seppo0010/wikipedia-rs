@@ -848,6 +848,7 @@ mod test {
     struct MockClient {
         pub url: Mutex<Vec<String>>,
         pub user_agent: Option<String>,
+        pub bearer_token: Option<String>,
         pub arguments: Mutex<Vec<iter::IterElems>>,
         pub response: Mutex<Vec<String>>,
     }
@@ -857,6 +858,7 @@ mod test {
             MockClient {
                 url: Mutex::new(Vec::new()),
                 user_agent: None,
+                bearer_token: None,
                 arguments: Mutex::new(Vec::new()),
                 response: Mutex::new(Vec::new()),
             }
@@ -866,6 +868,10 @@ mod test {
     impl super::http::HttpClient for MockClient {
         fn user_agent(&mut self, user_agent: String) {
             self.user_agent = Some(user_agent)
+        }
+
+        fn bearer_token(&mut self, bearer_token: String) {
+            self.bearer_token = Some(bearer_token)
         }
 
         fn get<'a, I>(&self, base_url: &str, args: I) -> Result<String, super::http::Error>
