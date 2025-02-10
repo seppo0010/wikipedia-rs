@@ -29,7 +29,7 @@ pub mod default {
     impl Default for Client {
         fn default() -> Self {
             Client {
-                user_agent: "".to_owned(),
+                user_agent: "wikipedia (https://github.com/seppo0010/wikipedia-rs)".to_owned(),
                 bearer_token: None,
             }
         }

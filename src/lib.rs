@@ -143,8 +143,7 @@ impl<A: http::HttpClient + Clone> Clone for Wikipedia<A> {
 
 impl<A: http::HttpClient> Wikipedia<A> {
     /// Creates a new object using the provided client and default values.
-    pub fn new(mut client: A) -> Self {
-        client.user_agent("wikipedia (https://github.com/seppo0010/wikipedia-rs)".to_owned());
+    pub fn new(client: A) -> Self {
         Wikipedia {
             client,
             pre_language_url: "https://".to_owned(),
@@ -845,6 +844,8 @@ mod test {
     use super::Wikipedia;
     use std::sync::Mutex;
 
+    const DEFAULT_AGENT: &str = "wikipedia (https://github.com/seppo0010/wikipedia-rs)";
+
     struct MockClient {
         pub url: Mutex<Vec<String>>,
         pub user_agent: Option<String>,
@@ -857,7 +858,7 @@ mod test {
         fn default() -> Self {
             MockClient {
                 url: Mutex::new(Vec::new()),
-                user_agent: None,
+                user_agent: Some(DEFAULT_AGENT.into()),
                 bearer_token: None,
                 arguments: Mutex::new(Vec::new()),
                 response: Mutex::new(Vec::new()),
@@ -911,10 +912,7 @@ mod test {
             .unwrap()
             .push("{}".to_owned());
         wikipedia.search("hello world").unwrap_err();
-        assert_eq!(
-            &*wikipedia.client.user_agent.unwrap(),
-            "wikipedia (https://github.com/seppo0010/wikipedia-rs)"
-        );
+        assert_eq!(&*wikipedia.client.user_agent.unwrap(), DEFAULT_AGENT);
 
         let mut client = MockClient::default();
         client.user_agent("hello world".to_owned());
