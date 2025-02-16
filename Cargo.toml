@@ -1,6 +1,6 @@
 [package]
 name = "wikipedia"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Sebastian Waisbrot <seppo0010@gmail.com>"]
 license-file = "LICENSE"
 description = "Access wikipedia articles from Rust"
@@ -16,7 +16,7 @@ default = ["http-client"]
 http-client = ["reqwest", "url"]
 
 [dependencies]
-serde_json = "1.0.107"
-reqwest = { version = "0.11.20", optional = true, features = ["blocking"] }
-url = { version = "2.4.1", optional = true }
-failure = "0.1.8"
+serde_json = "1.0.138"
+reqwest = { version = "0.12.2", optional = true, features = ["blocking"] }
+url = { version = "2.5.4", optional = true }
+thiserror = "2.0.11"

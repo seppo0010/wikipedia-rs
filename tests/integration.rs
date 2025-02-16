@@ -2,9 +2,9 @@ extern crate wikipedia;
 
 #[cfg(feature = "http-client")]
 mod tests {
-    use wikipedia::Wikipedia;
-    use wikipedia::http;
     use std::collections::HashSet;
+    use wikipedia::http;
+    use wikipedia::Wikipedia;
 
     fn w() -> Wikipedia<http::default::Client> {
         Wikipedia::default()
@@ -14,16 +14,17 @@ mod tests {
     fn search() {
         let wikipedia = w();
         let results = wikipedia.search("hello world").unwrap();
-        assert!(results.len() > 0);
+        assert!(!results.is_empty());
         assert!(results.contains(&"\"Hello, World!\" program".to_owned()));
     }
 
     #[test]
     fn geosearch() {
         let wikipedia = w();
-        let results = wikipedia.geosearch(-34.603333, -58.381667, 10).unwrap();
-        assert!(results.len() > 0);
-        assert!(results.contains(&"Buenos Aires".to_owned()));
+        let results = wikipedia.geosearch(-34.607307, -58.445566, 1000).unwrap();
+        assert!(!results.is_empty());
+        eprintln!("{:?}", results);
+        assert!(results.contains(&"Villa Crespo".to_owned()));
     }
 
     #[test]
@@ -49,7 +50,10 @@ mod tests {
     fn title() {
         let wikipedia = w();
         let page = wikipedia.page_from_title("Parkinson's law of triviality".to_owned());
-        assert_eq!(page.get_title().unwrap(), "Parkinson's law of triviality".to_owned());
+        assert_eq!(
+            page.get_title().unwrap(),
+            "Parkinson's law of triviality".to_owned()
+        );
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         assert_eq!(page.get_title().unwrap(), "Law of triviality".to_owned());
     }
@@ -103,9 +107,9 @@ mod tests {
         let mut c = 0;
         let mut set = HashSet::new();
         for i in images {
-            assert!(i.title.len() > 0);
-            assert!(i.url.len() > 0);
-            assert!(i.description_url.len() > 0);
+            assert!(!i.title.is_empty());
+            assert!(!i.url.is_empty());
+            assert!(!i.description_url.is_empty());
             c += 1;
             set.insert(i.title);
             if c == 11 {
@@ -175,21 +179,11 @@ mod tests {
         let page = wikipedia.page_from_title("Law of triviality".to_owned());
         let langlinks = page.get_langlinks().unwrap().collect::<Vec<_>>();
         assert_eq!(
-            langlinks
-                .iter()
-                .filter(|ll| ll.lang == "nl".to_owned())
-                .next()
-                .unwrap()
-                .title,
+            langlinks.iter().find(|ll| ll.lang == *"nl").unwrap().title,
             Some("Trivialiteitswet van Parkinson".into()),
         );
         assert_eq!(
-            langlinks
-                .iter()
-                .filter(|ll| ll.lang == "fr".to_owned())
-                .next()
-                .unwrap()
-                .title,
+            langlinks.iter().find(|ll| ll.lang == *"fr").unwrap().title,
             Some("Loi de futilité de Parkinson".into()),
         );
     }
@@ -217,17 +211,16 @@ mod tests {
         let wikipedia = w();
         let page = wikipedia.page_from_title("Bikeshedding".to_owned());
         assert_eq!(
-                page.get_sections().unwrap(),
-                vec![
+            page.get_sections().unwrap(),
+            vec![
                 "Argument".to_owned(),
-                "Examples".to_owned(),
                 "Related principles and formulations".to_owned(),
                 "See also".to_owned(),
                 "References".to_owned(),
                 "Further reading".to_owned(),
                 "External links".to_owned(),
-                ]
-                )
+            ]
+        )
     }
 
     #[test]
@@ -235,25 +228,27 @@ mod tests {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
         assert_eq!(
-                page.get_sections().unwrap(),
-                vec![
+            page.get_sections().unwrap(),
+            vec![
                 "Argument".to_owned(),
-                "Examples".to_owned(),
                 "Related principles and formulations".to_owned(),
                 "See also".to_owned(),
                 "References".to_owned(),
                 "Further reading".to_owned(),
                 "External links".to_owned(),
-                ]
-                )
+            ]
+        )
     }
 
     #[test]
     fn section_content() {
         let wikipedia = w();
         let page = wikipedia.page_from_pageid("4138548".to_owned());
-        assert!(page.get_section_content("Examples").unwrap().unwrap()
-                .contains("finance committee meeting"))
+        assert!(page
+            .get_section_content("Argument")
+            .unwrap()
+            .unwrap()
+            .contains("reactor is so vastly expensive"))
     }
 
     #[test]

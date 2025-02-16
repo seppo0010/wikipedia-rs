@@ -1,29 +1,31 @@
-use std::vec::IntoIter;
 use std::marker::PhantomData;
+use std::vec::IntoIter;
 
 use serde_json::Value;
 
-use super::{Page, Result, http};
+use super::{http, Page, Result};
+
+pub type IterElems = Vec<(String, String)>;
 
 pub struct Iter<'a, A: 'a + http::HttpClient, B: IterItem> {
     page: &'a Page<'a, A>,
     inner: IntoIter<Value>,
     cont: Option<Vec<(String, String)>>,
-    phantom: PhantomData<B>
+    phantom: PhantomData<B>,
 }
 
 impl<'a, A: http::HttpClient, B: IterItem> Iter<'a, A, B> {
     pub fn new(page: &'a Page<A>) -> Result<Iter<'a, A, B>> {
         let (array, cont) = B::request_next(page, &None)?;
         Ok(Iter {
-            page: page,
+            page,
             inner: array.into_iter(),
-            cont: cont,
+            cont,
             phantom: PhantomData,
         })
     }
 
-    fn fetch_next(&mut self) -> Result <()> {
+    fn fetch_next(&mut self) -> Result<()> {
         if self.cont.is_some() {
             let (array, cont) = B::request_next(self.page, &self.cont)?;
             self.inner = array.into_iter();
@@ -33,25 +35,27 @@ impl<'a, A: http::HttpClient, B: IterItem> Iter<'a, A, B> {
     }
 }
 
-impl<'a, A: http::HttpClient, B: IterItem> Iterator for Iter<'a, A, B> {
+impl<A: http::HttpClient, B: IterItem> Iterator for Iter<'_, A, B> {
     type Item = B;
     fn next(&mut self) -> Option<Self::Item> {
         match self.inner.next() {
-            Some(ref v) => B::from_value(&v),
+            Some(ref v) => B::from_value(v),
             None => match self.cont {
                 Some(_) => match self.fetch_next() {
                     Ok(_) => self.inner.next().and_then(|x| B::from_value(&x)),
                     Err(_) => None,
                 },
                 None => None,
-            }
+            },
         }
     }
 }
 
 pub trait IterItem: Sized {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)>;
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<IterElems>,
+    ) -> Result<(Vec<Value>, Option<IterElems>)>;
     fn from_value(value: &Value) -> Option<Self>;
 }
 
@@ -63,37 +67,39 @@ pub struct Image {
 }
 
 impl IterItem for Image {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
-        page.request_images(&cont)
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<IterElems>,
+    ) -> Result<(Vec<Value>, Option<IterElems>)> {
+        page.request_images(cont)
     }
 
     fn from_value(value: &Value) -> Option<Image> {
-        let obj = match value.as_object() {
-            Some(o) => o,
-            None => return None,
-        };
+        let obj = value.as_object()?;
 
         let title = obj
             .get("title")
             .and_then(|x| x.as_str())
-            .unwrap_or("").to_owned();
+            .unwrap_or("")
+            .to_owned();
         let url = obj
             .get("imageinfo")
             .and_then(|x| x.as_array())
-            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("url"))
             .and_then(|x| x.as_str())
-            .unwrap_or("").to_owned();
+            .unwrap_or("")
+            .to_owned();
         let description_url = obj
             .get("imageinfo")
             .and_then(|x| x.as_array())
-            .and_then(|x| x.into_iter().next())
+            .and_then(|x| x.iter().next())
             .and_then(|x| x.as_object())
             .and_then(|x| x.get("descriptionurl"))
             .and_then(|x| x.as_str())
-            .unwrap_or("").to_owned();
+            .unwrap_or("")
+            .to_owned();
 
         Some(Image {
             url: url.to_owned(),
@@ -109,9 +115,11 @@ pub struct Reference {
 }
 
 impl IterItem for Reference {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
-        page.request_extlinks(&cont)
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<IterElems>,
+    ) -> Result<(Vec<Value>, Option<IterElems>)> {
+        page.request_extlinks(cont)
     }
 
     fn from_value(value: &Value) -> Option<Reference> {
@@ -135,9 +143,11 @@ pub struct Link {
 }
 
 impl IterItem for Link {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
-        page.request_links(&cont)
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+        page.request_links(cont)
     }
 
     fn from_value(value: &Value) -> Option<Link> {
@@ -145,7 +155,9 @@ impl IterItem for Link {
             .as_object()
             .and_then(|x| x.get("title"))
             .and_then(|x| x.as_str())
-            .map(|s| Link { title: s.to_owned() })
+            .map(|s| Link {
+                title: s.to_owned(),
+            })
     }
 }
 
@@ -159,18 +171,18 @@ pub struct LangLink {
 }
 
 impl IterItem for LangLink {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
-        page.request_langlinks(&cont)
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+        page.request_langlinks(cont)
     }
 
     fn from_value(value: &Value) -> Option<LangLink> {
-        value
-            .as_object()
-            .map(|l| LangLink {
-                lang: l.get("lang").unwrap().as_str().unwrap().into(),
-                title: l.get("*").and_then(|n| n.as_str()).map(|n| n.into()),
-            })
+        value.as_object().map(|l| LangLink {
+            lang: l.get("lang").unwrap().as_str().unwrap().into(),
+            title: l.get("*").and_then(|n| n.as_str()).map(|n| n.into()),
+        })
     }
 }
 
@@ -180,9 +192,11 @@ pub struct Category {
 }
 
 impl IterItem for Category {
-    fn request_next<A: http::HttpClient>(page: &Page<A>, cont: &Option<Vec<(String, String)>>)
-            -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
-        page.request_categories(&cont)
+    fn request_next<A: http::HttpClient>(
+        page: &Page<A>,
+        cont: &Option<Vec<(String, String)>>,
+    ) -> Result<(Vec<Value>, Option<Vec<(String, String)>>)> {
+        page.request_categories(cont)
     }
 
     fn from_value(value: &Value) -> Option<Category> {
@@ -191,8 +205,8 @@ impl IterItem for Category {
             .and_then(|x| x.get("title"))
             .and_then(|x| x.as_str())
             .map(|s| Category {
-                title: if s.starts_with("Category: ") {
-                    s[10..].to_owned()
+                title: if let Some(st) = s.strip_prefix("Category: ") {
+                    st.to_owned()
                 } else {
                     s.to_owned()
                 },
